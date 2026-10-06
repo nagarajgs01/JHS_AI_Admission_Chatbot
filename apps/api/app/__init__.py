@@ -1,0 +1,2 @@
+"""AI Admissions Assistant API."""
+

@@ -1,0 +1,94 @@
+[
+  {"question": "What is the school name?", "expected_title": "School identity"},
+  {"question": "Schol name?", "expected_title": "School identity"},
+  {"question": "Is JHS part of JGI?", "expected_titles": ["School identity", "JGI Group background"]},
+
+  {"question": "What grades are offered?", "expected_title": "Grades and curriculum"},
+  {"question": "Do you have Nursery and UKG?", "expected_titles": ["Grades and curriculum", "Early-years learning approach"]},
+  {"question": "Will the school grow up to Grade 12?", "expected_title": "Grades and curriculum"},
+
+  {"question": "Which boards are available?", "expected_title": "Boards offered"},
+  {"question": "Is this school state or CBSE syllabus?", "expected_titles": ["Boards offered", "CBSE pathway", "Grades and curriculum"]},
+  {"question": "What syllabuss do you have?", "expected_titles": ["Boards offered", "Grades and curriculum"]},
+  {"question": "Must I choose CBSE or ICSE while enquiring?", "expected_title": "Boards offered"},
+
+  {"question": "Is CBSE aligned with NCERT?", "expected_title": "CBSE pathway"},
+  {"question": "Does CBSE help with JEE and NEET preparation?", "expected_title": "CBSE pathway"},
+  {"question": "What is the 5+3+3+4 structure?", "expected_title": "CBSE pathway"},
+
+  {"question": "What does the ICSE curriculum include?", "expected_title": "ICSE pathway"},
+  {"question": "Is ICSE offered under CISCE?", "expected_title": "ICSE pathway"},
+  {"question": "Does ICSE include computer applications?", "expected_title": "ICSE pathway"},
+
+  {"question": "What teaching methodology is used in early years?", "expected_title": "Early-years learning approach"},
+  {"question": "Do child learn thrrugh plaay?", "expected_title": "Early-years learning approach"},
+  {"question": "How will our child learn while playng?", "expected_title": "Early-years learning approach"},
+  {"question": "What ages are Pre-Primary for?", "expected_titles": ["Early-years learning approach", "Admission eligibility and age"]},
+
+  {"question": "What happens during a Pre-Primary day?", "expected_title": "Pre-Primary daily rhythm"},
+  {"question": "Do children get outdoor and creative time?", "expected_titles": ["Pre-Primary daily rhythm", "Early-years learning approach"]},
+
+  {"question": "What is the Finnish method?", "expected_title": "Finnish and Nordic-inspired methodology"},
+  {"question": "Does the curriculum use Montessori ideas?", "expected_title": "Finnish and Nordic-inspired methodology"},
+  {"question": "Do you copy the Finnish school system completely?", "expected_title": "Finnish and Nordic-inspired methodology"},
+
+  {"question": "How are students assessed?", "expected_title": "Learning and assessment in Grades 1-7"},
+  {"question": "Are there tests and projects?", "expected_title": "Learning and assessment in Grades 1-7"},
+  {"question": "Does the school rank children?", "expected_title": "Learning and assessment in Grades 1-7"},
+
+  {"question": "What is the school's educational philosophy?", "expected_title": "Educational philosophy"},
+  {"question": "Does the school focus only on marks?", "expected_titles": ["Educational philosophy", "Learning and assessment in Grades 1-7"]},
+
+  {"question": "Does the campus have robotics and STEAM labs?", "expected_title": "Campus learning spaces"},
+  {"question": "What is the Manipulative Learning Centre?", "expected_title": "Campus learning spaces"},
+  {"question": "Is there a space for reflection?", "expected_title": "Campus learning spaces"},
+
+  {"question": "Does the school have swimming facilities?", "expected_title": "Sports facilities"},
+  {"question": "Does the school offer aquatic activities?", "expected_title": "Sports facilities"},
+  {"question": "What sports can students play?", "expected_title": "Sports facilities"},
+
+  {"question": "Is there a library?", "expected_titles": ["Library, yoga, dance and music", "Campus learning spaces"]},
+  {"question": "Does the school teach yoga?", "expected_title": "Library, yoga, dance and music"},
+  {"question": "Are music and dance available?", "expected_title": "Library, yoga, dance and music"},
+
+  {"question": "Does the school provide meals?", "expected_title": "School meal plan"},
+  {"question": "Who provides the food?", "expected_title": "School meal plan"},
+  {"question": "Can the school handle food allergies?", "expected_title": "School meal plan"},
+
+  {"question": "Does the school provide bus transportation?", "expected_title": "Transport and extended day care"},
+  {"question": "Is extended day care available?", "expected_title": "Transport and extended day care"},
+  {"question": "How is the transport fee calculated?", "expected_titles": ["Transport and extended day care", "Fee information policy"]},
+
+  {"question": "What is the admission process?", "expected_title": "Admission process"},
+  {"question": "How do I apply?", "expected_title": "Admission process"},
+  {"question": "What happens after the campus visit?", "expected_title": "Admission process"},
+
+  {"question": "What details are needed for an enquiry?", "expected_title": "Admission enquiry information"},
+  {"question": "Will a counsellor call me?", "expected_title": "Admission enquiry information"},
+
+  {"question": "Is there an entrance test for Pre-Primary?", "expected_title": "Pre-Primary admission interaction"},
+  {"question": "How are transfer admissions handled?", "expected_title": "Pre-Primary admission interaction"},
+
+  {"question": "What is the age eligibility?", "expected_title": "Admission eligibility and age"},
+  {"question": "What is the exact date of birth cutoff?", "expected_title": "Admission eligibility and age"},
+
+  {"question": "What is the Grade 5 admission fee?", "expected_title": "Fee information policy"},
+  {"question": "Why are fees not shown online?", "expected_title": "Fee information policy"},
+  {"question": "Do fees include books and uniform?", "expected_title": "Fee information policy"},
+
+  {"question": "Will my enquiry data be sold?", "expected_title": "Enquiry privacy statement"},
+  {"question": "Will I be added to a marketing mailing list?", "expected_title": "Enquiry privacy statement"},
+
+  {"question": "Where is the school located?", "expected_title": "School contact details and location"},
+  {"question": "What is the contact number?", "expected_titles": ["School contact details and location", "Admission enquiry information"]},
+  {"question": "What is the admissions email?", "expected_title": "School contact details and location"},
+
+  {"question": "Who founded the JGI Group?", "expected_title": "JGI Group background"},
+  {"question": "How many institutions are in the JGI network?", "expected_title": "JGI Group background"},
+
+  {"question": "What are the school timings?", "expected_title": null},
+  {"question": "What is the admission deadline?", "expected_title": null},
+  {"question": "Are seats available in Grade 4 right now?", "expected_title": null},
+  {"question": "Who is the Grade 5 class teacher?", "expected_title": null},
+  {"question": "What are this year's school holidays?", "expected_title": null}
+]

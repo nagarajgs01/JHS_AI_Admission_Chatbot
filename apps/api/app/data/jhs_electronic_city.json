@@ -1,0 +1,218 @@
+[
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "School identity",
+    "content": "The official name is Jain Heritage School Electronic City, also referred to as JHS Electronic City. It is a member of the JGI Group and is located in Rayasandra near Electronic City in Bengaluru.",
+    "source_label": "JHS Electronic City official website, About Us",
+    "source_url": "https://jhselectroniccity.com/about.html",
+    "status": "published",
+    "tags": ["school name", "official name", "identity", "JHS", "Jain Heritage School", "Electronic City", "JGI Group"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Grades and curriculum",
+    "content": "Jain Heritage School Electronic City currently presents programmes from Playgroup through Grade 7. Pre-Primary includes Playgroup, Nursery, LKG and UKG. Grades 1 through 7 are offered with a choice of CBSE or ICSE. The official website says the campus plans to add one grade each academic year, beginning with Grade 8 in 2028-29 and reaching Grade 12 in 2032-33.",
+    "source_label": "JHS Electronic City official website, Admissions and Grades 1-7",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["grades", "classes", "playgroup", "nursery", "LKG", "UKG", "grade 7", "grade 12", "curriculum", "CBSE", "ICSE"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Boards offered",
+    "content": "The Electronic City campus offers both CBSE and ICSE. Families choose the board during the application and enrolment process, not when first submitting an enquiry. The school offers a board consultation during the campus visit to help families compare the two pathways.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["board", "boards", "CBSE", "ICSE", "syllabus", "curriculum", "board choice", "consultation"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "CBSE pathway",
+    "content": "The school's CBSE pathway is described as NCERT-aligned and structured under the NEP 2020 5+3+3+4 framework. The official website highlights Mathematics and Science foundations, competency-based learning, national portability and later alignment with examinations such as JEE, NEET and CUET. The school states that it teaches the full CBSE syllabus using Finnish-inspired methods.",
+    "source_label": "JHS Electronic City official website, CBSE",
+    "source_url": "https://jhselectroniccity.com/cbse.html",
+    "status": "published",
+    "tags": ["CBSE", "NCERT", "NEP 2020", "5+3+3+4", "JEE", "NEET", "CUET", "STEM", "national board"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "ICSE pathway",
+    "content": "The school's ICSE pathway follows the CISCE curriculum. The official website describes it as language-rich and analytically focused, with English, a second language, Mathematics, Environmental Science or Science, Social Studies, Computer Applications, Value Education, Art and Craft, and Physical Education among the learning areas for Grades 1 through 7.",
+    "source_label": "JHS Electronic City official website, ICSE",
+    "source_url": "https://jhselectroniccity.com/icse.html",
+    "status": "published",
+    "tags": ["ICSE", "CISCE", "English", "languages", "science", "social studies", "computer applications", "curriculum"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Early-years learning approach",
+    "content": "Pre-Primary covers Playgroup, Nursery, LKG and UKG and is described for approximately ages 2.5 to 5. The programme uses purposeful play, guided exploration, storytelling, art, movement, outdoor activity and reflection. Through play, children practise language, motor skills, cooperation, spatial reasoning, problem-solving and early scientific thinking. Published age bands are indicative; exact admission eligibility must be confirmed by the admissions team.",
+    "source_label": "JHS Electronic City official website, Pre-Primary",
+    "source_url": "https://jhselectroniccity.com/Preschool.html",
+    "status": "published",
+    "tags": ["early years", "pre-primary", "playgroup", "nursery", "LKG", "UKG", "play", "learning", "ages 2.5 to 5", "activities"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Pre-Primary daily rhythm",
+    "content": "The Pre-Primary page describes a flexible daily rhythm rather than fixed published clock times. Activities include settling and free choice, circle time, guided exploration, a shared snack, outdoor gross-motor play, quiet or mindfulness time, creative activity and reflection before going home.",
+    "source_label": "JHS Electronic City official website, Pre-Primary",
+    "source_url": "https://jhselectroniccity.com/Preschool.html",
+    "status": "published",
+    "tags": ["pre-primary day", "daily routine", "circle time", "snack", "outdoor play", "mindfulness", "reflection"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Finnish and Nordic-inspired methodology",
+    "content": "The school combines the requirements of CBSE or ICSE with Finnish-inspired teaching practices. It says it adopts Finnish practices that fit its students and the applicable board framework rather than copying the Finnish system in full. The approach emphasizes inquiry, understanding, application, collaboration, reflection, differentiated instruction and independent thinking. The official brochure also describes early education as influenced by Montessori and Reggio Emilia philosophies.",
+    "source_label": "JHS official website, Philosophy and Why JHS; official brochure, pages 2-3",
+    "source_url": "https://jhselectroniccity.com/philosophy.html",
+    "status": "published",
+    "tags": ["Finnish", "Nordic", "Montessori", "Reggio Emilia", "pedagogy", "inquiry", "collaboration", "reflection", "differentiated instruction", "independent thinking"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Learning and assessment in Grades 1-7",
+    "content": "For Grades 1 through 7, the school describes visual, auditory and kinesthetic learning routes. Each child has an individual learning portfolio. Day-to-day assessment includes observation, discussion, reflective journals, peer assessment and self-assessment, while formal assessment includes projects, presentations and unit tests. The school says it does not publish a rank order for children.",
+    "source_label": "JHS Electronic City official website, Grades 1-7",
+    "source_url": "https://jhselectroniccity.com/middle_school.html",
+    "status": "published",
+    "tags": ["assessment", "learning portfolio", "visual", "auditory", "kinesthetic", "projects", "presentations", "unit tests", "grades 1 to 7"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Educational philosophy",
+    "content": "The school's published vision is to encourage human development through ethical values, character-building, leadership and education. It emphasizes social responsibility, critical thinking, cultural heritage and the intellectual, moral, physical, social and emotional development of each child. The school describes education as preparation for life, not only examinations.",
+    "source_label": "JHS Electronic City official website, About Us",
+    "source_url": "https://jhselectroniccity.com/about.html",
+    "status": "published",
+    "tags": ["vision", "mission", "philosophy", "values", "leadership", "critical thinking", "whole child", "social responsibility"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Campus learning spaces",
+    "content": "The campus website describes STEAM and robotics facilities, a library and reading spaces, art, music and performance rooms, a Discovery Zone, a Manipulative Learning Centre and a Contemplative Learning Centre. The Manipulative Learning Centre supports hands-on learning with concrete materials, while the Contemplative Learning Centre supports reflection, journals and self-assessment.",
+    "source_label": "JHS Electronic City official website, Campus",
+    "source_url": "https://jhselectroniccity.com/campus.html",
+    "status": "published",
+    "tags": ["campus", "facilities", "STEAM", "robotics", "library", "art", "music", "Discovery Zone", "Manipulative Learning Centre", "Contemplative Learning Centre"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Sports facilities",
+    "content": "The school's public information describes sports and physical education as part of the timetable, with fitness, teamwork, discipline and healthy competition among its aims. The official brochure additionally lists basketball, volleyball, table tennis, badminton, swimming, cricket practice nets, futsal and indoor games.",
+    "source_label": "JHS official website, Why JHS; official brochure, page 4",
+    "source_url": "https://jhselectroniccity.com/why-jhs.html",
+    "status": "published",
+    "tags": ["sports", "physical education", "basketball", "volleyball", "swimming", "cricket", "futsal", "badminton", "table tennis", "indoor games"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Library, yoga, dance and music",
+    "content": "The school describes a library and reading culture together with dedicated spaces and timetabled opportunities for art, music and performance. The official brochure also lists yoga, mindfulness, dance and music programmes.",
+    "source_label": "JHS official website, Campus and Why JHS; official brochure, page 4",
+    "source_url": "https://jhselectroniccity.com/campus.html",
+    "status": "published",
+    "tags": ["library", "reading", "yoga", "mindfulness", "dance", "music", "art", "performance"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "School meal plan",
+    "content": "The school states that meals are designed by qualified dieticians and cooked on campus. Meals are optional for Pre-Primary. The official brochure identifies Sodexo as the meal-service partner. Allergy and dietary needs are recorded during admission and are intended to be followed by the school.",
+    "source_label": "JHS official website, Admissions and Campus; official brochure, page 4",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["food", "meal", "lunch", "Sodexo", "campus kitchen", "dietician", "allergy", "dietary needs", "pre-primary"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Transport and extended day care",
+    "content": "The school website states that school transport with pick-up and drop is available, along with extended day care for families needing a longer day. Transport pricing depends on the family's address and route. Route coverage, timings, availability and charges must be confirmed with the admissions team for the family's specific location.",
+    "source_label": "JHS Electronic City official website, Campus and Admissions",
+    "source_url": "https://jhselectroniccity.com/campus.html",
+    "status": "published",
+    "tags": ["transport", "bus", "pick-up", "drop", "route", "distance", "extended day care", "after school"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Admission process",
+    "content": "The published admission process has four stages: enquire by submitting interest online or calling the school; visit the campus and consult the team; complete the application, choose CBSE or ICSE and provide the required documents; then attend an age-appropriate interaction followed by an admission offer and onboarding when applicable.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["admission process", "enquiry", "campus visit", "application", "documents", "interaction", "enrolment", "onboarding"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Admission enquiry information",
+    "content": "For an initial admission enquiry, the website asks for the child's name and date of birth, the grade being considered and a contact number. Families may instead call the admissions team at +91 96630 21118. The website says a counsellor calls to answer questions and arrange a visit.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["enquiry form", "student name", "date of birth", "grade", "phone", "counsellor", "campus visit"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Pre-Primary admission interaction",
+    "content": "The school states that there is no entrance test for Pre-Primary. Instead, it conducts a friendly, age-appropriate interaction intended to help the school understand how the child learns. Transfer and mid-year admissions for other grades are handled case by case and should be discussed with admissions.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["entrance test", "pre-primary", "interaction", "assessment", "transfer admission", "mid-year admission"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Admission eligibility and age",
+    "content": "The website presents Pre-Primary as approximately ages 2.5 to 5 and Grades 1 through 7 as approximately ages 6 to 13. These age bands are indicative. Exact date-of-birth cut-offs, grade eligibility, transfer eligibility and exceptions must be confirmed by the admissions team for the relevant academic session.",
+    "source_label": "JHS Electronic City official website, Admissions and Pre-Primary",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["age eligibility", "date of birth", "cut-off", "pre-primary", "grade eligibility", "transfer", "ages 2.5 to 5", "ages 6 to 13"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Fee information policy",
+    "content": "The school does not publish exact fee amounts on its website. It says the complete current structure is shared directly and may include grade-specific tuition, meals, transport priced by route and distance, books, materials, uniform, available discounts or concessions, and extended day care. Families can request the current figures from admissions before visiting. Exact amounts must be confirmed directly with the school.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["fees", "fee structure", "tuition", "transport fee", "meal fee", "books", "uniform", "discount", "concession", "day care cost"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Seat availability",
+    "content": "The admissions page says seats in each section are limited and encourages families to begin early. It does not publish live seat counts. Availability for a particular grade, board and academic session must be confirmed by the admissions team.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["seat", "seats", "availability", "vacancy", "limited seats", "grade", "board"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Enquiry privacy statement",
+    "content": "The school's public website says enquiry details go to its admissions team, are not sold or shared, and are not added to a marketing mailing list or automated follow-up campaign. The admissions process page says the school makes one call to answer questions and offer a visit slot.",
+    "source_label": "JHS Electronic City official website, Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["privacy", "personal data", "enquiry details", "mailing list", "marketing", "follow-up", "admissions team"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "School contact details and location",
+    "content": "Jain Heritage School Electronic City is located at Sy No 22/2 and 25/2, Rayasandra Main Road, Rayasandra, Bengaluru, Sriramapura, Karnataka 560099. The admissions phone number is +91 96630 21118 and the email address is info@jhselectroniccity.com. The official website is https://jhselectroniccity.com/. Campus visits should be booked in advance.",
+    "source_label": "JHS Electronic City official website, Contact",
+    "source_url": "https://jhselectroniccity.com/contact.html",
+    "status": "published",
+    "tags": ["address", "location", "phone", "contact", "email", "Rayasandra", "Bengaluru", "directions", "campus visit"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "JGI Group background",
+    "content": "Jain Heritage School belongs to the JGI Group. The official website says the group was founded in 1990 by Dr. Chenraj Roychand and has more than 100 institutions in its network. The Electronic City campus describes a pathway extending from school to JAIN colleges and JAIN (Deemed-to-be University).",
+    "source_label": "JHS Electronic City official website, About Us and Admissions",
+    "source_url": "https://jhselectroniccity.com/about.html",
+    "status": "published",
+    "tags": ["JGI Group", "1990", "Dr Chenraj Roychand", "100 institutions", "JAIN University", "background", "history"]
+  }
+]

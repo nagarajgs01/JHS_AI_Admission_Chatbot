@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600&display=swap');
+
+:root { font-family: "DM Sans", sans-serif; color: #18312d; background: #f4f0e7; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input { font: inherit; }
+.page-shell { min-height: 100vh; display: grid; grid-template-columns: 1fr minmax(340px, 520px); gap: clamp(3rem, 9vw, 9rem); align-items: center; padding: clamp(2rem, 6vw, 6rem); background: radial-gradient(circle at 8% 14%, #f8c88b 0 9%, transparent 9.2%), linear-gradient(135deg, #f6f1e7 0 58%, #dce8de 58%); }
+.intro { max-width: 650px; }
+.eyebrow { color: #b24d2d; font-size: .78rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+h1 { font: 600 clamp(3.5rem, 7vw, 7.5rem)/.92 "Playfair Display", serif; margin: .5rem 0 1.5rem; letter-spacing: -.04em; }
+.intro p { max-width: 520px; color: #52625e; font-size: 1.15rem; line-height: 1.65; }
+.chat-card { height: min(760px, 82vh); position: relative; display: grid; grid-template-rows: auto 1fr auto auto auto; overflow: hidden; border: 1px solid rgba(24,49,45,.12); border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 32px 80px rgba(26,54,47,.18); }
+.chat-card header { display: flex; gap: 12px; align-items: center; padding: 20px 22px; border-bottom: 1px solid #e7ece8; }
+.chat-card header div:last-child { display: grid; gap: 2px; }
+.chat-card header span { color: #70817c; font-size: .78rem; }
+.crest { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; color: white; background: #1e2f61; font-size: .68rem; font-weight: 700; }
+.messages { overflow: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 14px; }
+.message { max-width: 84%; padding: 12px 15px; border-radius: 18px; line-height: 1.45; }
+.message p { margin: 0; }
+.message small { display: block; margin-top: 8px; color: #60716c; }
+.message.assistant { align-self: flex-start; background: #eef3ef; border-bottom-left-radius: 5px; }
+.message.user { align-self: flex-end; color: white; background: #1d5a4e; border-bottom-right-radius: 5px; }
+.composer, .contact-form { padding: 14px 18px; border-top: 1px solid #e7ece8; }
+.composer, .contact-form div { display: flex; gap: 9px; }
+.composer input, .contact-form input { min-width: 0; flex: 1; border: 1px solid #ccd8d2; border-radius: 12px; padding: 12px 14px; outline: none; }
+.composer input:focus, .contact-form input:focus { border-color: #1d5a4e; box-shadow: 0 0 0 3px rgba(29,90,78,.12); }
+button { border: 0; border-radius: 12px; padding: 0 19px; color: white; background: #c05835; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .55; cursor: default; }
+.quick-actions { display: flex; gap: 7px; overflow-x: auto; padding: 8px 18px 12px; }
+.quick-actions button { flex: 0 0 auto; padding: 8px 11px; border: 1px solid #cbd8e8; color: #1e2f61; background: white; font-size: .74rem; }
+.quick-actions .primary-chip { color: white; border-color: #1e2f61; background: #1e2f61; }
+.lead-form { position: absolute; inset: 76px 16px 16px; z-index: 3; overflow: auto; padding: 20px; border: 1px solid #dce2e0; border-radius: 18px; background: white; box-shadow: 0 18px 50px rgba(22,37,61,.2); }
+.form-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 1.1rem; }
+.form-heading button { width: 32px; height: 32px; padding: 0; color: #53605d; background: #eef2f1; font-size: 1.4rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lead-form label { display: grid; gap: 6px; color: #52625e; font-size: .76rem; font-weight: 700; }
+.lead-form input { width: 100%; padding: 10px 11px; border: 1px solid #ccd8d2; border-radius: 10px; }
+.lead-form > button { width: 100%; min-height: 42px; margin-top: 14px; }
+.lead-form .consent { display: flex; grid-column: 1/-1; grid-template-columns: auto 1fr; align-items: start; margin-top: 14px; font-weight: 500; }
+.consent input { width: auto; margin-top: 2px; }
+.contact-form { display: grid; gap: 8px; background: #fff9ef; }
+.contact-form label { font-size: .84rem; font-weight: 700; }
+.contact-form small { color: #7a7061; font-size: .7rem; }
+@media (max-width: 860px) { .page-shell { grid-template-columns: 1fr; align-items: start; } .intro { padding-top: 3rem; } h1 { font-size: clamp(3.2rem, 14vw, 5.8rem); } .chat-card { height: 680px; } .form-grid { grid-template-columns: 1fr; } }
