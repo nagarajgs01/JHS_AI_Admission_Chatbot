@@ -6,3 +6,17 @@ node_modules/
 dist/
 .pytest_cache/
 
+.DS_Store
+*.log
+
+.env.*
+!.env.example
+
+output/
+tmp/
+upload/
+
+private_documents/
+private_uploads/
+apps/api/private_data/
+
