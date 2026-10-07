@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -71,6 +72,26 @@ class UnansweredQuestion(BaseModel):
     consent_to_contact: bool = False
     status: str = "open"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AdminUnansweredQuestion(UnansweredQuestion):
+    latest_answer: str | None = None
+    response_status: Literal["draft", "approved"] | None = None
+    responded_at: datetime | None = None
+
+
+class AdminAnswerSubmission(BaseModel):
+    school_id: str = Field(min_length=2, max_length=80)
+    answer: str = Field(min_length=2, max_length=5000)
+
+
+class AdminQuestionResponse(BaseModel):
+    id: UUID
+    unanswered_id: UUID
+    answer: str
+    status: Literal["draft", "approved"]
+    created_at: datetime
+    approved_at: datetime | None = None
 
 
 class LeadSubmission(BaseModel):

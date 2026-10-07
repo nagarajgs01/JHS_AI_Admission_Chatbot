@@ -21,6 +21,7 @@ class Settings(BaseModel):
     )
     answer_min_score: float = float(getenv("ANSWER_MIN_SCORE", "0.38"))
     allowed_origins: str = getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+    admin_api_key: str = getenv("ADMIN_API_KEY", "change-me-local-only")
 
 
 @lru_cache

@@ -1,12 +1,18 @@
 from contextlib import asynccontextmanager
+from secrets import compare_digest
+from typing import Annotated, Literal
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .embeddings import HashingEmbeddingModel, SentenceTransformerEmbeddingModel
 from .llm import EvidenceOnlyModel, OllamaModel, VLLMModel
 from .models import (
+    AdminAnswerSubmission,
+    AdminQuestionResponse,
+    AdminUnansweredQuestion,
     ChatRequest,
     ChatResponse,
     EscalationContact,
@@ -63,8 +69,23 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",")],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
 )
+
+
+def require_admin_key(
+    x_admin_key: Annotated[str | None, Header(alias="X-Admin-Key")] = None,
+) -> None:
+    if (
+        settings.app_env != "development"
+        and settings.admin_api_key == "change-me-local-only"
+    ):
+        raise HTTPException(status_code=503, detail="Admin authentication is not configured")
+    if x_admin_key is None or not compare_digest(x_admin_key, settings.admin_api_key):
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+
+AdminAccess = Annotated[None, Depends(require_admin_key)]
 
 
 @app.get("/health")
@@ -100,9 +121,89 @@ async def create_lead(submission: LeadSubmission) -> Lead:
     return leads.create(submission)
 
 
+@app.get(
+    "/v1/admin/unanswered",
+    response_model=list[AdminUnansweredQuestion],
+)
+async def list_unanswered_questions(
+    _: AdminAccess,
+    school_id: str,
+    question_status: Annotated[
+        Literal["open", "answered", "closed"], Query(alias="status")
+    ] = "open",
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[AdminUnansweredQuestion]:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    return unanswered.list_for_school(school_id, question_status, limit, offset)
+
+
+@app.get(
+    "/v1/admin/unanswered/{unanswered_id}",
+    response_model=AdminUnansweredQuestion,
+)
+async def get_unanswered_question(
+    unanswered_id: UUID,
+    school_id: str,
+    _: AdminAccess,
+) -> AdminUnansweredQuestion:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    item = unanswered.get_for_school(school_id, unanswered_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Unanswered question not found")
+    return item
+
+
+@app.post(
+    "/v1/admin/unanswered/{unanswered_id}/draft",
+    response_model=AdminQuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def save_answer_draft(
+    unanswered_id: UUID,
+    submission: AdminAnswerSubmission,
+    _: AdminAccess,
+) -> AdminQuestionResponse:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    try:
+        return unanswered.save_answer(
+            submission.school_id,
+            unanswered_id,
+            submission.answer,
+            "draft",
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/admin/unanswered/{unanswered_id}/approve",
+    response_model=AdminQuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def approve_answer(
+    unanswered_id: UUID,
+    submission: AdminAnswerSubmission,
+    _: AdminAccess,
+) -> AdminQuestionResponse:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    try:
+        return unanswered.save_answer(
+            submission.school_id,
+            unanswered_id,
+            submission.answer,
+            "approved",
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @app.post("/v1/admin/knowledge", response_model=KnowledgeEntry, status_code=201)
-async def create_knowledge(entry: KnowledgeEntry) -> KnowledgeEntry:
-    # Authentication/RBAC is the next milestone; this route is local-development only.
+async def create_knowledge(entry: KnowledgeEntry, _: AdminAccess) -> KnowledgeEntry:
     if not hasattr(knowledge, "add"):
         raise HTTPException(
             status_code=501,

@@ -1,7 +1,13 @@
 from uuid import UUID
 
 from .database import database_connection
-from .models import Lead, LeadSubmission, UnansweredQuestion
+from .models import (
+    AdminQuestionResponse,
+    AdminUnansweredQuestion,
+    Lead,
+    LeadSubmission,
+    UnansweredQuestion,
+)
 
 
 def school_uuid(cursor, school_slug: str) -> UUID:
@@ -34,6 +40,147 @@ class PostgresUnansweredRepository:
             question=question,
             status=status,
             created_at=created_at,
+        )
+
+    def list_for_school(
+        self,
+        school_id: str,
+        question_status: str = "open",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[AdminUnansweredQuestion]:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        uq.id, s.slug, uq.question, uq.contact_email,
+                        uq.consent_to_contact, uq.status, uq.created_at,
+                        latest.answer, latest.status, latest.created_at
+                    FROM unanswered_questions uq
+                    JOIN schools s ON s.id = uq.school_id
+                    LEFT JOIN LATERAL (
+                        SELECT qr.answer, qr.status, qr.created_at
+                        FROM question_responses qr
+                        WHERE qr.unanswered_question_id = uq.id
+                        ORDER BY qr.created_at DESC
+                        LIMIT 1
+                    ) latest ON true
+                    WHERE s.slug = %s AND uq.status = %s
+                    ORDER BY uq.created_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (school_id, question_status, limit, offset),
+                )
+                rows = cursor.fetchall()
+
+        return [self._admin_question_from_row(row) for row in rows]
+
+    def get_for_school(
+        self,
+        school_id: str,
+        unanswered_id: UUID,
+    ) -> AdminUnansweredQuestion | None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        uq.id, s.slug, uq.question, uq.contact_email,
+                        uq.consent_to_contact, uq.status, uq.created_at,
+                        latest.answer, latest.status, latest.created_at
+                    FROM unanswered_questions uq
+                    JOIN schools s ON s.id = uq.school_id
+                    LEFT JOIN LATERAL (
+                        SELECT qr.answer, qr.status, qr.created_at
+                        FROM question_responses qr
+                        WHERE qr.unanswered_question_id = uq.id
+                        ORDER BY qr.created_at DESC
+                        LIMIT 1
+                    ) latest ON true
+                    WHERE s.slug = %s AND uq.id = %s
+                    """,
+                    (school_id, unanswered_id),
+                )
+                row = cursor.fetchone()
+
+        return self._admin_question_from_row(row) if row else None
+
+    def save_answer(
+        self,
+        school_id: str,
+        unanswered_id: UUID,
+        answer: str,
+        response_status: str,
+    ) -> AdminQuestionResponse:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT uq.id
+                    FROM unanswered_questions uq
+                    JOIN schools s ON s.id = uq.school_id
+                    WHERE uq.id = %s AND s.slug = %s
+                    FOR UPDATE OF uq
+                    """,
+                    (unanswered_id, school_id),
+                )
+                if cursor.fetchone() is None:
+                    raise LookupError("Unanswered question not found")
+
+                cursor.execute(
+                    """
+                    INSERT INTO question_responses (
+                        unanswered_question_id, answer, status, approved_at
+                    )
+                    VALUES (
+                        %s, %s, %s,
+                        CASE WHEN %s = 'approved' THEN now() ELSE NULL END
+                    )
+                    RETURNING id, created_at, approved_at
+                    """,
+                    (
+                        unanswered_id,
+                        answer.strip(),
+                        response_status,
+                        response_status,
+                    ),
+                )
+                response_id, created_at, approved_at = cursor.fetchone()
+
+                if response_status == "approved":
+                    cursor.execute(
+                        """
+                        UPDATE unanswered_questions
+                        SET status = 'answered', resolved_at = now()
+                        WHERE id = %s
+                        """,
+                        (unanswered_id,),
+                    )
+            connection.commit()
+
+        return AdminQuestionResponse(
+            id=response_id,
+            unanswered_id=unanswered_id,
+            answer=answer.strip(),
+            status=response_status,
+            created_at=created_at,
+            approved_at=approved_at,
+        )
+
+    @staticmethod
+    def _admin_question_from_row(row) -> AdminUnansweredQuestion:
+        return AdminUnansweredQuestion(
+            id=row[0],
+            school_id=row[1],
+            question=row[2],
+            contact_email=row[3],
+            consent_to_contact=row[4],
+            status=row[5],
+            created_at=row[6],
+            latest_answer=row[7],
+            response_status=row[8],
+            responded_at=row[9],
         )
 
     def get(self, unanswered_id: UUID) -> UnansweredQuestion | None:
