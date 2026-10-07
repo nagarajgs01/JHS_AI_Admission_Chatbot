@@ -63,6 +63,8 @@ class PostgresKnowledgeRepository:
                     source_url=row["source_url"],
                     status="published",
                     tags=row["tags"],
+                    valid_from=row["valid_from"],
+                    expires_at=row["expires_at"],
                 ),
                 score=round(float(row["combined_score"]), 4),
                 evidence_supported=(index == 0),
@@ -110,9 +112,10 @@ def ingest_entries(
                     """
                     INSERT INTO knowledge_entries (
                         id, school_id, title, content, source_label,
-                        source_url, status, tags, approved_at, updated_at
+                        source_url, status, tags, valid_from, expires_at,
+                        approved_at, updated_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                             CASE WHEN %s = 'published' THEN now() ELSE NULL END, now())
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title,
@@ -121,6 +124,8 @@ def ingest_entries(
                         source_url = EXCLUDED.source_url,
                         status = EXCLUDED.status,
                         tags = EXCLUDED.tags,
+                        valid_from = EXCLUDED.valid_from,
+                        expires_at = EXCLUDED.expires_at,
                         approved_at = EXCLUDED.approved_at,
                         updated_at = now()
                     """,
@@ -133,6 +138,8 @@ def ingest_entries(
                         entry.source_url,
                         entry.status.value,
                         entry.tags,
+                        entry.valid_from,
+                        entry.expires_at,
                         entry.status.value,
                     ),
                 )
@@ -193,12 +200,16 @@ def search_entries(
                     ke.source_label,
                     ke.source_url,
                     ke.tags,
+                    ke.valid_from,
+                    ke.expires_at,
                     1 - (kc.embedding <=> %s) AS semantic_score
                 FROM knowledge_chunks kc
                 JOIN knowledge_entries ke ON ke.id = kc.knowledge_entry_id
                 JOIN schools s ON s.id = kc.school_id
                 WHERE s.slug = %s
                   AND ke.status = 'published'
+                  AND (ke.valid_from IS NULL OR ke.valid_from <= now())
+                  AND (ke.expires_at IS NULL OR ke.expires_at > now())
                   AND kc.embedding IS NOT NULL
                 ORDER BY semantic_score DESC
                 LIMIT %s

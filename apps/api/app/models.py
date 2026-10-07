@@ -20,6 +20,8 @@ class KnowledgeEntry(BaseModel):
     source_url: str | None = None
     status: KnowledgeStatus = KnowledgeStatus.DRAFT
     tags: list[str] = Field(default_factory=list)
+    valid_from: datetime | None = None
+    expires_at: datetime | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -1,3 +1,4 @@
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from .llm import LanguageModel
@@ -21,6 +22,14 @@ class UnansweredRepository:
         self.items[item.id] = item
         return item
 
+    def get(self, unanswered_id: UUID) -> UnansweredQuestion | None:
+        return self.items.get(unanswered_id)
+
+    def attach_contact(self, unanswered_id: UUID, email: str) -> None:
+        item = self.items[unanswered_id]
+        item.contact_email = email
+        item.consent_to_contact = True
+
 
 class LeadRepository:
     def __init__(self) -> None:
@@ -32,11 +41,21 @@ class LeadRepository:
         return lead
 
 
+class UnansweredStore(Protocol):
+    def create(self, school_id: str, question: str) -> UnansweredQuestion: ...
+    def get(self, unanswered_id: UUID) -> UnansweredQuestion | None: ...
+    def attach_contact(self, unanswered_id: UUID, email: str) -> None: ...
+
+
+class LeadStore(Protocol):
+    def create(self, submission: LeadSubmission) -> Lead: ...
+
+
 class ChatService:
     def __init__(
         self,
         knowledge: InMemoryKnowledgeRepository,
-        unanswered: UnansweredRepository,
+        unanswered: UnansweredStore,
         model: LanguageModel,
         min_score: float,
     ) -> None:
@@ -70,6 +89,18 @@ class ChatService:
         ]
         answer = await self.model.answer(request.message, approved_hits)
         if answer == "INSUFFICIENT_EVIDENCE":
+            unanswered = self.unanswered.create(request.school_id, request.message)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=ESCALATION_MESSAGE,
+                outcome="escalated",
+                confidence=hits[0].score,
+                unanswered_id=unanswered.id,
+            )
+
+        # Retrieval success does not make generated wording trustworthy. A separate,
+        # constrained pass must verify every factual claim against the same evidence.
+        if not await self.model.verify(request.message, answer, approved_hits):
             unanswered = self.unanswered.create(request.school_id, request.message)
             return ChatResponse(
                 conversation_id=conversation_id,

@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from .models import KnowledgeEntry, KnowledgeStatus
 
@@ -64,6 +65,14 @@ class InMemoryKnowledgeRepository:
         self.entries.append(entry)
         return entry
 
+    @staticmethod
+    def _is_active(entry: KnowledgeEntry) -> bool:
+        now = datetime.now(timezone.utc)
+        return (
+            (entry.valid_from is None or entry.valid_from <= now)
+            and (entry.expires_at is None or entry.expires_at > now)
+        )
+
     def search(self, school_id: str, query: str, limit: int = 4) -> list[SearchHit]:
         query_tokens = tokenize(query)
         if not query_tokens:
@@ -71,7 +80,11 @@ class InMemoryKnowledgeRepository:
 
         hits: list[SearchHit] = []
         for entry in self.entries:
-            if entry.school_id != school_id or entry.status != KnowledgeStatus.PUBLISHED:
+            if (
+                entry.school_id != school_id
+                or entry.status != KnowledgeStatus.PUBLISHED
+                or not self._is_active(entry)
+            ):
                 continue
             document_tokens = tokenize(f"{entry.title} {entry.content} {' '.join(entry.tags)}")
             overlap = len(query_tokens & document_tokens)
@@ -98,7 +111,11 @@ class InMemoryHybridKnowledgeRepository(InMemoryKnowledgeRepository):
         self.chunks = embed_entries(self._published_entries(), embedding_model)
 
     def _published_entries(self) -> list[KnowledgeEntry]:
-        return [entry for entry in self.entries if entry.status == KnowledgeStatus.PUBLISHED]
+        return [
+            entry
+            for entry in self.entries
+            if entry.status == KnowledgeStatus.PUBLISHED and self._is_active(entry)
+        ]
 
     def add(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         from .ingestion import embed_entries

@@ -15,6 +15,7 @@ from .models import (
     LeadSubmission,
 )
 from .postgres_knowledge import PostgresKnowledgeRepository
+from .postgres_operations import PostgresLeadRepository, PostgresUnansweredRepository
 from .retrieval import InMemoryHybridKnowledgeRepository
 from .seed import load_published_seed_data
 from .service import ChatService, LeadRepository, UnansweredRepository
@@ -31,8 +32,12 @@ knowledge = (
     if settings.knowledge_provider == "postgres"
     else InMemoryHybridKnowledgeRepository(load_published_seed_data(), embedding_model)
 )
-unanswered = UnansweredRepository()
-leads = LeadRepository()
+if settings.knowledge_provider == "postgres":
+    unanswered = PostgresUnansweredRepository()
+    leads = PostgresLeadRepository()
+else:
+    unanswered = UnansweredRepository()
+    leads = LeadRepository()
 
 
 def build_model():
@@ -82,13 +87,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 @app.post("/v1/escalations/contact", status_code=status.HTTP_204_NO_CONTENT)
 async def save_escalation_contact(contact: EscalationContact) -> None:
-    item = unanswered.items.get(contact.unanswered_id)
+    item = unanswered.get(contact.unanswered_id)
     if item is None or item.school_id != contact.school_id:
         raise HTTPException(status_code=404, detail="Unanswered question not found")
     if not contact.consent_to_contact:
         raise HTTPException(status_code=422, detail="Consent is required")
-    item.contact_email = contact.email
-    item.consent_to_contact = True
+    unanswered.attach_contact(contact.unanswered_id, contact.email)
 
 
 @app.post("/v1/leads", response_model=Lead, status_code=status.HTTP_201_CREATED)

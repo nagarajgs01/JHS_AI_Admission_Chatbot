@@ -20,9 +20,17 @@ only says a brochure references a curriculum, do not claim the school exclusivel
 follows or offers that curriculum. When sources mention multiple curricula, include
 each relevant one and do not silently choose one."""
 
+VERIFIER_PROMPT = """You are a strict factual-grounding verifier.
+Determine whether every factual claim in the proposed answer is directly supported by
+the approved sources. Do not use outside knowledge or make assumptions. Qualifications,
+dates, names, numbers, policies, availability, and curriculum claims must match the
+sources. If sources conflict, are insufficient, or the answer adds a new fact, return
+exactly: UNSUPPORTED. Otherwise return exactly: SUPPORTED."""
+
 
 class LanguageModel(Protocol):
     async def answer(self, question: str, evidence: list[SearchHit]) -> str: ...
+    async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool: ...
     async def health(self) -> bool: ...
 
 
@@ -37,12 +45,37 @@ def build_messages(question: str, evidence: list[SearchHit]) -> list[dict[str, s
     ]
 
 
+def build_verification_messages(
+    question: str,
+    answer: str,
+    evidence: list[SearchHit],
+) -> list[dict[str, str]]:
+    context = "\n\n".join(
+        f"SOURCE {index + 1}: {hit.entry.title}\n{hit.entry.content}"
+        for index, hit in enumerate(evidence)
+    )
+    return [
+        {"role": "system", "content": VERIFIER_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"APPROVED SOURCES\n{context}\n\nQUESTION\n{question}"
+                f"\n\nPROPOSED ANSWER\n{answer}"
+            ),
+        },
+    ]
+
+
 class EvidenceOnlyModel:
     """Deterministic test adapter; it makes no network or model call."""
 
     async def answer(self, question: str, evidence: list[SearchHit]) -> str:
         del question
         return evidence[0].entry.content
+
+    async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool:
+        del question, answer, evidence
+        return True
 
     async def health(self) -> bool:
         return True
@@ -96,6 +129,18 @@ class OllamaModel(LocalHTTPModel):
         response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
         return response["message"]["content"].strip()
 
+    async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool:
+        payload = {
+            "model": self.model,
+            "messages": build_verification_messages(question, answer, evidence),
+            "stream": False,
+            "think": False,
+            "keep_alive": "30m",
+            "options": {"temperature": 0, "num_predict": 8},
+        }
+        response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
+        return response["message"]["content"].strip().upper() == "SUPPORTED"
+
 
 class VLLMModel(LocalHTTPModel):
     """Production adapter for our OpenAI-compatible self-hosted vLLM server."""
@@ -115,3 +160,14 @@ class VLLMModel(LocalHTTPModel):
         }
         response = await asyncio.to_thread(self._post_json, "/v1/chat/completions", payload)
         return response["choices"][0]["message"]["content"].strip()
+
+    async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool:
+        payload = {
+            "model": self.model,
+            "messages": build_verification_messages(question, answer, evidence),
+            "temperature": 0,
+            "max_tokens": 8,
+        }
+        response = await asyncio.to_thread(self._post_json, "/v1/chat/completions", payload)
+        result = response["choices"][0]["message"]["content"].strip().upper()
+        return result == "SUPPORTED"
