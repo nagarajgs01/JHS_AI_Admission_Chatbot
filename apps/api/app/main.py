@@ -12,6 +12,7 @@ from .llm import EvidenceOnlyModel, OllamaModel, VLLMModel
 from .models import (
     AdminAnswerSubmission,
     AdminQuestionResponse,
+    AdminSuggestionResponse,
     AdminUnansweredQuestion,
     ChatRequest,
     ChatResponse,
@@ -24,7 +25,12 @@ from .postgres_knowledge import PostgresKnowledgeRepository
 from .postgres_operations import PostgresLeadRepository, PostgresUnansweredRepository
 from .retrieval import InMemoryHybridKnowledgeRepository
 from .seed import load_published_seed_data
-from .service import ChatService, LeadRepository, UnansweredRepository
+from .service import (
+    AdminSuggestionService,
+    ChatService,
+    LeadRepository,
+    UnansweredRepository,
+)
 
 
 settings = get_settings()
@@ -56,6 +62,11 @@ def build_model():
 
 chat_service = ChatService(knowledge, unanswered, build_model(), settings.answer_min_score)
 language_model = chat_service.model
+admin_suggestion_service = AdminSuggestionService(
+    knowledge,
+    language_model,
+    settings.answer_min_score,
+)
 
 
 @asynccontextmanager
@@ -154,6 +165,29 @@ async def get_unanswered_question(
     if item is None:
         raise HTTPException(status_code=404, detail="Unanswered question not found")
     return item
+
+
+@app.post(
+    "/v1/admin/unanswered/{unanswered_id}/suggestions",
+    response_model=AdminSuggestionResponse,
+)
+async def generate_answer_suggestions(
+    unanswered_id: UUID,
+    school_id: str,
+    _: AdminAccess,
+) -> AdminSuggestionResponse:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    item = unanswered.get_for_school(school_id, unanswered_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Unanswered question not found")
+    if item.status != "open":
+        raise HTTPException(status_code=409, detail="Question is no longer open")
+    return await admin_suggestion_service.generate(
+        school_id,
+        unanswered_id,
+        item.question,
+    )
 
 
 @app.post(

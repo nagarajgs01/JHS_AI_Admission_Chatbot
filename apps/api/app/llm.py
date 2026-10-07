@@ -27,10 +27,20 @@ dates, names, numbers, policies, availability, and curriculum claims must match 
 sources. If sources conflict, are insufficient, or the answer adds a new fact, return
 exactly: UNSUPPORTED. Otherwise return exactly: SUPPORTED."""
 
+SUGGESTION_PROMPT = """You create draft replies for authorized school staff to review.
+Use only the approved sources supplied in the current request. Never use outside
+knowledge, guess, or invent a name, date, fee, availability, policy, or promise.
+Create up to three concise alternative drafts that answer the question while preserving
+all source qualifications. Return only valid JSON in this exact shape:
+{"suggestions":["draft one","draft two"]}
+If the sources do not directly support a useful answer, return:
+{"suggestions":[]}"""
+
 
 class LanguageModel(Protocol):
     async def answer(self, question: str, evidence: list[SearchHit]) -> str: ...
     async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool: ...
+    async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]: ...
     async def health(self) -> bool: ...
 
 
@@ -66,6 +76,39 @@ def build_verification_messages(
     ]
 
 
+def build_suggestion_messages(
+    question: str,
+    evidence: list[SearchHit],
+) -> list[dict[str, str]]:
+    context = "\n\n".join(
+        f"SOURCE {index + 1}: {hit.entry.title}\n{hit.entry.content}"
+        for index, hit in enumerate(evidence)
+    )
+    return [
+        {"role": "system", "content": SUGGESTION_PROMPT},
+        {
+            "role": "user",
+            "content": f"APPROVED SOURCES\n{context}\n\nQUESTION\n{question}",
+        },
+    ]
+
+
+def parse_suggestions(content: str) -> list[str]:
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        cleaned = "\n".join(lines[1:-1]).strip()
+    payload = json.loads(cleaned)
+    suggestions = payload.get("suggestions", [])
+    if not isinstance(suggestions, list):
+        raise ValueError("Model suggestions must be a list")
+    return [
+        suggestion.strip()
+        for suggestion in suggestions[:3]
+        if isinstance(suggestion, str) and suggestion.strip()
+    ]
+
+
 class EvidenceOnlyModel:
     """Deterministic test adapter; it makes no network or model call."""
 
@@ -76,6 +119,10 @@ class EvidenceOnlyModel:
     async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool:
         del question, answer, evidence
         return True
+
+    async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
+        del question
+        return [evidence[0].entry.content] if evidence else []
 
     async def health(self) -> bool:
         return True
@@ -141,6 +188,19 @@ class OllamaModel(LocalHTTPModel):
         response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
         return response["message"]["content"].strip().upper() == "SUPPORTED"
 
+    async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
+        payload = {
+            "model": self.model,
+            "messages": build_suggestion_messages(question, evidence),
+            "stream": False,
+            "think": False,
+            "format": "json",
+            "keep_alive": "30m",
+            "options": {"temperature": 0.2, "num_predict": 450},
+        }
+        response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
+        return parse_suggestions(response["message"]["content"])
+
 
 class VLLMModel(LocalHTTPModel):
     """Production adapter for our OpenAI-compatible self-hosted vLLM server."""
@@ -171,3 +231,13 @@ class VLLMModel(LocalHTTPModel):
         response = await asyncio.to_thread(self._post_json, "/v1/chat/completions", payload)
         result = response["choices"][0]["message"]["content"].strip().upper()
         return result == "SUPPORTED"
+
+    async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
+        payload = {
+            "model": self.model,
+            "messages": build_suggestion_messages(question, evidence),
+            "temperature": 0.2,
+            "max_tokens": 450,
+        }
+        response = await asyncio.to_thread(self._post_json, "/v1/chat/completions", payload)
+        return parse_suggestions(response["choices"][0]["message"]["content"])

@@ -2,7 +2,16 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from .llm import LanguageModel
-from .models import ChatRequest, ChatResponse, Citation, Lead, LeadSubmission, UnansweredQuestion
+from .models import (
+    AdminAnswerSuggestion,
+    AdminSuggestionResponse,
+    ChatRequest,
+    ChatResponse,
+    Citation,
+    Lead,
+    LeadSubmission,
+    UnansweredQuestion,
+)
 from .retrieval import InMemoryKnowledgeRepository
 
 
@@ -10,6 +19,13 @@ ESCALATION_MESSAGE = (
     "I’m sorry, but I don’t have enough approved information to answer that confidently. "
     "No admissions agent is currently available. Please share your email address, and a "
     "school representative will contact you as soon as possible."
+)
+
+CALLBACK_SUGGESTIONS = (
+    "Thank you for your enquiry. The requested information is not available in the "
+    "currently approved school information. The school team will verify it and contact you.",
+    "Thank you for contacting the school. We have forwarded your question to the appropriate "
+    "team and will respond after the information has been confirmed.",
 )
 
 
@@ -126,4 +142,81 @@ class ChatService:
             outcome="answered",
             confidence=hits[0].score,
             citations=citations,
+        )
+
+
+class AdminSuggestionService:
+    def __init__(self, knowledge, model: LanguageModel, min_score: float) -> None:
+        self.knowledge = knowledge
+        self.model = model
+        self.min_score = min_score
+
+    async def generate(
+        self,
+        school_id: str,
+        unanswered_id: UUID,
+        question: str,
+    ) -> AdminSuggestionResponse:
+        hits = self.knowledge.search(school_id, question)
+        approved_hits = [
+            hit
+            for hit in hits
+            if hit.score >= self.min_score or hit.evidence_supported
+        ]
+
+        suggestions: list[AdminAnswerSuggestion] = []
+        if approved_hits:
+            try:
+                candidates = await self.model.suggest(question, approved_hits)
+            except (KeyError, RuntimeError, TypeError, ValueError):
+                candidates = []
+
+            citations = [
+                Citation(
+                    knowledge_id=hit.entry.id,
+                    title=hit.entry.title,
+                    source_label=hit.entry.source_label,
+                    excerpt=hit.entry.content[:240],
+                    score=hit.score,
+                )
+                for hit in approved_hits
+            ]
+            seen: set[str] = set()
+            for candidate in candidates:
+                normalized = " ".join(candidate.lower().split())
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                try:
+                    verified = await self.model.verify(
+                        question,
+                        candidate,
+                        approved_hits,
+                    )
+                except (KeyError, RuntimeError, TypeError, ValueError):
+                    verified = False
+                if verified:
+                    suggestions.append(
+                        AdminAnswerSuggestion(
+                            answer=candidate,
+                            kind="grounded",
+                            citations=citations,
+                        )
+                    )
+
+        for callback in CALLBACK_SUGGESTIONS:
+            if len(suggestions) >= 3:
+                break
+            suggestions.append(
+                AdminAnswerSuggestion(
+                    answer=callback,
+                    kind="callback",
+                    requires_staff_verification=True,
+                )
+            )
+
+        return AdminSuggestionResponse(
+            unanswered_id=unanswered_id,
+            question=question,
+            suggestions=suggestions,
         )

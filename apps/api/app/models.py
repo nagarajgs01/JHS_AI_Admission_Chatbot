@@ -94,6 +94,19 @@ class AdminQuestionResponse(BaseModel):
     approved_at: datetime | None = None
 
 
+class AdminAnswerSuggestion(BaseModel):
+    answer: str
+    kind: Literal["grounded", "callback"]
+    requires_staff_verification: bool = True
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class AdminSuggestionResponse(BaseModel):
+    unanswered_id: UUID
+    question: str
+    suggestions: list[AdminAnswerSuggestion]
+
+
 class LeadSubmission(BaseModel):
     school_id: str
     student_name: str = Field(min_length=2, max_length=120)
