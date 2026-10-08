@@ -126,7 +126,7 @@ def should_offer_clarification(question: str, candidates) -> bool:
 def is_obviously_out_of_scope(question: str) -> bool:
     lowered = " ".join(question.lower().split())
     school_time_context = re.search(
-        r"\b(school|class|admission|campus|application|deadline|birth|cutoff|cut-off|timing|timings|hours)\b",
+        r"\b(school|class|admission|campus|application|deadline|birth|cutoff|cut-off|timing|timings|hours|visit|visiting|tour|appointment)\b",
         lowered,
     )
     if re.search(r"\btime\b", lowered) and not school_time_context:

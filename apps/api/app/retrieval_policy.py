@@ -18,7 +18,6 @@ DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "grow": ("add grade", "open grade", "reach grade 12", "growth roadmap"),
     "age": ("eligibility", "date of birth", "cut-off"),
     "assessment": ("tests", "projects", "learning portfolio", "evaluation"),
-    "apply": ("application", "admission process", "enrolment"),
     "creative": ("art", "music", "movement"),
     "marks": ("whole child", "rank", "examinations"),
     "entrance": ("interaction", "admission assessment", "test"),
@@ -46,12 +45,13 @@ REQUIRED_EVIDENCE: dict[str, dict[str, set[str]]] = {
         "evidence": {"transport", "transportation", "bus", "buses", "route"},
     },
     "timings": {
-        "triggers": {"timing", "timings", "hours", "schedule", "open", "close"},
+        "triggers": {"timing", "timings", "hours", "schedule"},
         "evidence": {"timing", "timings", "hours", "schedule", "am", "pm"},
     },
     "deadlines": {
         "triggers": {"deadline", "deadlines", "last date"},
         "evidence": {"deadline", "deadlines", "last date", "closing date"},
+        "deferrals": {"must be confirmed"},
     },
     "seat availability": {
         "triggers": {"seat", "seats", "vacancy", "vacancies", "availability"},
@@ -103,6 +103,22 @@ def expand_query(query: str) -> str:
             additions.extend(("grades", "curriculum", "board", "CBSE", "ICSE"))
         elif terms & {"transport", "bus", "route"}:
             additions.extend(("bus", "route", "pickup", "drop-off"))
+    # "Apply" may mean applying knowledge or submitting an admission form. Only
+    # expand it toward admissions when the surrounding words establish that intent.
+    learning_application_context = bool(
+        terms & {"reflect", "learn", "knowledge", "concept", "lesson", "practice"}
+    )
+    if "apply" in terms and (
+        terms & {"admission", "application", "enrolment", "enquiry", "form", "join"}
+        or not learning_application_context
+    ):
+        additions.extend(("application", "admission process", "enrolment"))
+    if terms & {"choose", "select", "compare"} and terms & {
+        "board", "curriculum", "cbse", "icse"
+    }:
+        additions.extend(("board selection", "board counselling", "CBSE", "ICSE"))
+    if "visit" in terms and terms & {"book", "appointment", "schedule"}:
+        additions.extend(("campus visit", "booked in advance", "contact", "appointment"))
     if "enquiry" in terms and {"detail", "details", "information", "needed"} & terms:
         additions.extend(("child name", "date of birth", "grade", "contact number"))
     for raw_token in TOKEN_RE.findall(query.lower()):
@@ -155,6 +171,17 @@ def evaluate_evidence(
     ):
         return EvidenceDecision(False, "retrieved passage has no approved clock-time evidence")
 
+    # Office/contact hours do not establish the student school-day schedule.
+    if (
+        "school" in TOKEN_RE.findall(lowered_question)
+        and {"timing", "timings", "schedule"} & question_terms
+        and not any(
+            phrase in lowered_passage
+            for phrase in ("school-day timing", "school day timing", "student timing", "class timing")
+        )
+    ):
+        return EvidenceDecision(False, "office hours do not establish student school timings")
+
     if "who" in lowered_question and {"teacher", "faculty"} & question_terms:
         return EvidenceDecision(False, "no approved named staff evidence is available")
 
@@ -178,9 +205,10 @@ def evaluate_evidence(
 
     if score < minimum_score:
         keyword_score = meaningful_keyword_score(question, passage)
+        high_coverage_lexical_match = score >= 0.18 and keyword_score >= 0.75
         strong_direct_match = score >= 0.25 and keyword_score >= 0.66
         balanced_match = score >= 0.32 and keyword_score >= 0.50
-        if strong_direct_match or balanced_match:
+        if high_coverage_lexical_match or strong_direct_match or balanced_match:
             return EvidenceDecision(
                 True,
                 "strong direct or typo-tolerant evidence match",

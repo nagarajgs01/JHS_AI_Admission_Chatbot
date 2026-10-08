@@ -18,6 +18,13 @@ h1 { font: 600 clamp(3.5rem, 7vw, 7.5rem)/.92 "Playfair Display", serif; margin:
 .message { max-width: 84%; padding: 12px 15px; border-radius: 18px; line-height: 1.45; }
 .message p { margin: 0; }
 .message small { display: block; margin-top: 8px; color: #60716c; }
+.message-sources { margin-top: 10px; border-top: 1px solid rgba(29,90,78,.12); }
+.message-sources summary { width: fit-content; padding-top: 9px; color: #285f54; font-size: .72rem; font-weight: 700; cursor: pointer; list-style-position: inside; }
+.message-sources summary:hover { color: #173f37; }
+.source-list { display: grid; gap: 7px; margin-top: 9px; }
+.source-item { padding: 8px 10px; border: 1px solid #d7e2dd; border-radius: 9px; background: rgba(255,255,255,.72); }
+.source-item strong { display: block; color: #29453f; font-size: .7rem; line-height: 1.35; }
+.source-item small { margin-top: 2px; color: #687873; font-size: .64rem; line-height: 1.35; }
 .clarification-options { display: grid; gap: 7px; margin-top: 12px; }
 .clarification-options button { min-height: 36px; padding: 8px 10px; border: 1px solid #bcd1c8; color: #174d42; background: white; text-align: left; font-size: .76rem; }
 .clarification-options button:hover { background: #e3f0ea; }
@@ -142,6 +149,12 @@ button:disabled { opacity: .55; cursor: default; }
 .admin-actions button { min-height: 44px; }
 .approved-answer { margin-top: 28px; padding: 22px; border: 1px solid #cfe0d6; border-radius: 15px; background: white; }
 .approved-answer p { line-height: 1.6; }
+.delivery-status { display: grid; gap: 5px; margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: .78rem; }
+.delivery-status.sent { color: #245f45; background: #e1f3e7; }
+.delivery-status.failed { color: #8b3028; background: #ffe9e6; }
+.delivery-status.pending { color: #71513d; background: #fff5ea; }
+.delivery-status.not_applicable { color: #59635f; background: #edf0ee; }
+.delivery-status button { justify-self: start; min-height: 36px; margin-top: 4px; }
 .admin-loading { position: fixed; right: 24px; bottom: 24px; padding: 10px 14px; border-radius: 999px; color: white; background: #173f37; box-shadow: 0 8px 24px rgba(24,49,45,.2); }
 .admin-notice, .admin-error { padding: 11px 13px; border-radius: 10px; font-size: .82rem; }
 .admin-notice { color: #245f45; background: #e1f3e7; }

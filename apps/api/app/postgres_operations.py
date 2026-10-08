@@ -56,11 +56,13 @@ class PostgresUnansweredRepository:
                     SELECT
                         uq.id, s.slug, uq.question, uq.contact_email,
                         uq.consent_to_contact, uq.status, uq.created_at,
-                        latest.answer, latest.status, latest.created_at
+                        latest.id, latest.answer, latest.status, latest.created_at,
+                        latest.delivery_status, latest.delivery_error, latest.delivered_at
                     FROM unanswered_questions uq
                     JOIN schools s ON s.id = uq.school_id
                     LEFT JOIN LATERAL (
-                        SELECT qr.answer, qr.status, qr.created_at
+                        SELECT qr.id, qr.answer, qr.status, qr.created_at,
+                               qr.delivery_status, qr.delivery_error, qr.delivered_at
                         FROM question_responses qr
                         WHERE qr.unanswered_question_id = uq.id
                         ORDER BY qr.created_at DESC
@@ -88,11 +90,13 @@ class PostgresUnansweredRepository:
                     SELECT
                         uq.id, s.slug, uq.question, uq.contact_email,
                         uq.consent_to_contact, uq.status, uq.created_at,
-                        latest.answer, latest.status, latest.created_at
+                        latest.id, latest.answer, latest.status, latest.created_at,
+                        latest.delivery_status, latest.delivery_error, latest.delivered_at
                     FROM unanswered_questions uq
                     JOIN schools s ON s.id = uq.school_id
                     LEFT JOIN LATERAL (
-                        SELECT qr.answer, qr.status, qr.created_at
+                        SELECT qr.id, qr.answer, qr.status, qr.created_at,
+                               qr.delivery_status, qr.delivery_error, qr.delivered_at
                         FROM question_responses qr
                         WHERE qr.unanswered_question_id = uq.id
                         ORDER BY qr.created_at DESC
@@ -112,6 +116,7 @@ class PostgresUnansweredRepository:
         unanswered_id: UUID,
         answer: str,
         response_status: str,
+        delivery_status: str = "not_applicable",
     ) -> AdminQuestionResponse:
         with database_connection() as connection:
             with connection.cursor() as cursor:
@@ -131,22 +136,25 @@ class PostgresUnansweredRepository:
                 cursor.execute(
                     """
                     INSERT INTO question_responses (
-                        unanswered_question_id, answer, status, approved_at
+                        unanswered_question_id, answer, status, approved_at,
+                        delivery_status
                     )
                     VALUES (
                         %s, %s, %s,
-                        CASE WHEN %s = 'approved' THEN now() ELSE NULL END
+                        CASE WHEN %s = 'approved' THEN now() ELSE NULL END,
+                        %s
                     )
-                    RETURNING id, created_at, approved_at
+                    RETURNING id, created_at, approved_at, delivery_status
                     """,
                     (
                         unanswered_id,
                         answer.strip(),
                         response_status,
                         response_status,
+                        delivery_status,
                     ),
                 )
-                response_id, created_at, approved_at = cursor.fetchone()
+                response_id, created_at, approved_at, saved_delivery_status = cursor.fetchone()
 
                 if response_status == "approved":
                     cursor.execute(
@@ -166,7 +174,30 @@ class PostgresUnansweredRepository:
             status=response_status,
             created_at=created_at,
             approved_at=approved_at,
+            delivery_status=saved_delivery_status,
         )
+
+    def update_delivery(
+        self,
+        response_id: UUID,
+        delivery_status: str,
+        delivery_error: str | None = None,
+    ) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE question_responses
+                    SET delivery_status = %s,
+                        delivery_error = %s,
+                        delivered_at = CASE WHEN %s = 'sent' THEN now() ELSE NULL END
+                    WHERE id = %s AND status = 'approved'
+                    """,
+                    (delivery_status, delivery_error, delivery_status, response_id),
+                )
+                if cursor.rowcount != 1:
+                    raise LookupError("Approved response not found")
+            connection.commit()
 
     @staticmethod
     def _admin_question_from_row(row) -> AdminUnansweredQuestion:
@@ -178,9 +209,13 @@ class PostgresUnansweredRepository:
             consent_to_contact=row[4],
             status=row[5],
             created_at=row[6],
-            latest_answer=row[7],
-            response_status=row[8],
-            responded_at=row[9],
+            latest_response_id=row[7],
+            latest_answer=row[8],
+            response_status=row[9],
+            responded_at=row[10],
+            delivery_status=row[11],
+            delivery_error=row[12],
+            delivered_at=row[13],
         )
 
     def get(self, unanswered_id: UUID) -> UnansweredQuestion | None:

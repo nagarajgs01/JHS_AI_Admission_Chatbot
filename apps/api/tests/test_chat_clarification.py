@@ -5,7 +5,13 @@ import pytest
 from app.llm import EvidenceOnlyModel
 from app.models import ChatRequest, KnowledgeEntry, KnowledgeStatus, QueryUnderstanding
 from app.retrieval import SearchHit
-from app.service import ChatService, UnansweredRepository
+from app.service import ChatService, UnansweredRepository, is_obviously_out_of_scope
+
+
+def test_time_question_with_visit_context_stays_in_school_scope():
+    assert not is_obviously_out_of_scope("What time can I visit?")
+    assert not is_obviously_out_of_scope("What time can I visit the campus?")
+    assert is_obviously_out_of_scope("What time is it?")
 
 
 class CandidateOnlyRepository:

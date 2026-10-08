@@ -5,12 +5,12 @@
 
   {"question": "What grades are offered?", "expected_title": "Grades and curriculum"},
   {"question": "Do you have Nursery and UKG?", "expected_titles": ["Grades and curriculum", "Early-years learning approach"]},
-  {"question": "Will the school grow up to Grade 12?", "expected_title": "Grades and curriculum"},
+  {"question": "Will the school grow up to Grade 12?", "expected_titles": ["Grades and curriculum", "K-12 learning continuum"]},
 
   {"question": "Which boards are available?", "expected_title": "Boards offered"},
   {"question": "Is this school state or CBSE syllabus?", "expected_titles": ["Boards offered", "CBSE pathway", "Grades and curriculum"]},
   {"question": "What syllabuss do you have?", "expected_titles": ["Boards offered", "Grades and curriculum"]},
-  {"question": "Must I choose CBSE or ICSE while enquiring?", "expected_title": "Boards offered"},
+  {"question": "Must I choose CBSE or ICSE while enquiring?", "expected_titles": ["Boards offered", "Choosing between CBSE and ICSE"]},
 
   {"question": "Is CBSE aligned with NCERT?", "expected_title": "CBSE pathway"},
   {"question": "Does CBSE help with JEE and NEET preparation?", "expected_title": "CBSE pathway"},
@@ -84,7 +84,45 @@
   {"question": "What is the admissions email?", "expected_title": "School contact details and location"},
 
   {"question": "Who founded the JGI Group?", "expected_title": "JGI Group background"},
+  {"question": "Who is the chairman of the school?", "expected_titles": ["JGI Group background", "Chairman's educational message"]},
+  {"question": "Who is the chairperson of JHS?", "expected_title": "JGI Group background"},
   {"question": "How many institutions are in the JGI network?", "expected_title": "JGI Group background"},
+
+  {"question": "What does the chairman say about education?", "expected_title": "Chairman's educational message"},
+  {"question": "What is Dr Chenraj Roychand's message to parents?", "expected_titles": ["Chairman's educational message", "JGI Group background"]},
+
+  {"question": "What are the four stages of learning at JHS?", "expected_title": "K-12 learning continuum"},
+  {"question": "What do Exploration, Foundation, Formation and Direction mean?", "expected_title": "K-12 learning continuum"},
+  {"question": "What is the school's learning cycle?", "expected_title": "School-wide learning cycle"},
+  {"question": "Do students wonder, experience, reflect and apply?", "expected_title": "School-wide learning cycle"},
+
+  {"question": "How does the school support different learning styles?", "expected_title": "Personalised learning and student support"},
+  {"question": "What is the staff student ratio?", "expected_title": "Personalised learning and student support"},
+  {"question": "Will a child who needs more time get support?", "expected_title": "Personalised learning and student support"},
+  {"question": "What are the eight intelligences?", "expected_title": "Multiple intelligences and transversal competences"},
+  {"question": "How are life skills taught?", "expected_titles": ["Multiple intelligences and transversal competences", "Enterprise and real-world skills"]},
+
+  {"question": "Does every child get opportunities for public speaking?", "expected_title": "Arts, communication and leadership"},
+  {"question": "Do you have drama and instrumental music?", "expected_titles": ["Arts, communication and leadership", "Library, yoga, dance and music"]},
+  {"question": "What is the Budding Entrepreneur Programme?", "expected_title": "Enterprise and real-world skills"},
+  {"question": "Do students learn planning and budgeting?", "expected_title": "Enterprise and real-world skills"},
+
+  {"question": "How does the school support student wellbeing?", "expected_title": "Student wellbeing, health and safety"},
+  {"question": "Is the campus safe and supervised?", "expected_title": "Student wellbeing, health and safety"},
+
+  {"question": "Which is better here, CBSE or ICSE?", "expected_title": "Choosing between CBSE and ICSE"},
+  {"question": "Can the school help us choose a board?", "expected_titles": ["Choosing between CBSE and ICSE", "Boards offered"]},
+  {"question": "Do both boards use the same facilities?", "expected_title": "Choosing between CBSE and ICSE"},
+
+  {"question": "Is the Electronic City campus open now?", "expected_title": "Campus status and published facilities"},
+  {"question": "Are all campus photographs from Electronic City?", "expected_title": "Campus status and published facilities"},
+  {"question": "What are the office hours?", "expected_title": "Contact hours and visit booking"},
+  {"question": "Do I need to book before visiting?", "expected_titles": ["Contact hours and visit booking", "School contact details and location"]},
+
+  {"question": "Are there teaching jobs at JHS?", "expected_title": "Careers and job applications"},
+  {"question": "Where can I send my resume?", "expected_title": "Careers and job applications"},
+  {"question": "Which academic year is admission open for?", "expected_title": "Published admissions session"},
+  {"question": "Are admissions open for 2027-28?", "expected_title": "Published admissions session"},
 
   {"question": "What are the school timings?", "expected_title": null},
   {"question": "What is the admission deadline?", "expected_title": null},

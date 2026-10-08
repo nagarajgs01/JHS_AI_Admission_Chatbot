@@ -90,9 +90,13 @@ class UnansweredQuestion(BaseModel):
 
 
 class AdminUnansweredQuestion(UnansweredQuestion):
+    latest_response_id: UUID | None = None
     latest_answer: str | None = None
     response_status: Literal["draft", "approved"] | None = None
     responded_at: datetime | None = None
+    delivery_status: Literal["pending", "sent", "failed", "not_applicable"] | None = None
+    delivery_error: str | None = None
+    delivered_at: datetime | None = None
 
 
 class AdminAnswerSubmission(BaseModel):
@@ -113,6 +117,9 @@ class AdminQuestionResponse(BaseModel):
     created_at: datetime
     approved_at: datetime | None = None
     knowledge_entry_id: UUID | None = None
+    delivery_status: Literal["pending", "sent", "failed", "not_applicable"] = "not_applicable"
+    delivery_error: str | None = None
+    delivered_at: datetime | None = None
 
 
 class AdminAnswerSuggestion(BaseModel):

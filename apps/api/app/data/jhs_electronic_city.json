@@ -209,10 +209,127 @@
   {
     "school_id": "jhs-electronic-city",
     "title": "JGI Group background",
-    "content": "Jain Heritage School belongs to the JGI Group. The official website says the group was founded in 1990 by Dr. Chenraj Roychand and has more than 100 institutions in its network. The Electronic City campus describes a pathway extending from school to JAIN colleges and JAIN (Deemed-to-be University).",
+    "content": "Jain Heritage School belongs to the JGI Group. The official website identifies Dr. Chenraj Roychand as the Founder and Chairman of the JGI Group and says he founded the group in 1990. The group has more than 100 institutions in its network. The Electronic City campus describes a pathway extending from school to JAIN colleges and JAIN (Deemed-to-be University). The website states his chairmanship at the JGI Group level rather than naming a separate chairman specifically for the Electronic City campus.",
     "source_label": "JHS Electronic City official website, About Us and Admissions",
     "source_url": "https://jhselectroniccity.com/about.html",
     "status": "published",
-    "tags": ["JGI Group", "1990", "Dr Chenraj Roychand", "100 institutions", "JAIN University", "background", "history"]
+    "tags": ["JGI Group", "1990", "Dr Chenraj Roychand", "founder", "chairman", "chairperson", "leadership", "100 institutions", "JAIN University", "background", "history"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Chairman's educational message",
+    "content": "The official About page carries a message from Dr. Chenraj Roychand, identified as Founder and Chairman of the JGI Group. The message says education should be for life rather than only for earning a living, and describes the school's role as recognizing each child's strengths, protecting their curiosity and helping them build confidence. This is a JGI Group leadership message; the page does not identify a separate Electronic City campus chairman.",
+    "source_label": "JHS Electronic City official website, About Us",
+    "source_url": "https://jhselectroniccity.com/about.html",
+    "status": "published",
+    "tags": ["chairman message", "Dr Chenraj Roychand", "leadership", "education for life", "child strengths", "confidence", "curiosity"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "K-12 learning continuum",
+    "content": "The school's published learning continuum has four stages: Exploration in Pre-Primary, Foundation in Grades 1 through 7, Formation in middle school and Direction in high school. The Electronic City campus currently publishes programmes through Grade 7 and says later grades will open progressively, so descriptions of the later stages explain the planned pathway rather than classes currently available at every level.",
+    "source_label": "JHS Electronic City official website, Philosophy",
+    "source_url": "https://jhselectroniccity.com/philosophy.html",
+    "status": "published",
+    "tags": ["K-12", "continuum", "Exploration", "Foundation", "Formation", "Direction", "middle school", "high school", "learning stages", "pathway"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "School-wide learning cycle",
+    "content": "Across the school, the published learning path moves through five steps: wonder, experience, work together, reflect and apply. The school describes this as a cross-stage method used with age-appropriate differences in Pre-Primary and Grades 1 through 7. It is a teaching method layered onto the selected CBSE or ICSE syllabus, not a replacement board or separate curriculum.",
+    "source_label": "JHS Electronic City official website, Philosophy and Why JHS",
+    "source_url": "https://jhselectroniccity.com/philosophy.html",
+    "status": "published",
+    "tags": ["learning cycle", "learning path", "wonder", "experience", "collaborate", "together", "reflect", "apply", "teaching method"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Personalised learning and student support",
+    "content": "The website says teachers recognise visual, auditory and kinesthetic learning routes, record learning-style observations and use differentiated instruction. It describes targeted support for children who need more time and says learning information is carried forward to the next teacher. The school publishes a staff-to-student ratio of 1:15. These statements describe the school's general approach and do not guarantee an individual diagnosis, therapy or specific accommodation without confirmation from the school.",
+    "source_label": "JHS Electronic City official website, Philosophy, Why JHS and Grades 1-7",
+    "source_url": "https://jhselectroniccity.com/philosophy.html",
+    "status": "published",
+    "tags": ["personalised learning", "student support", "learning style", "visual", "auditory", "kinesthetic", "differentiated instruction", "staff student ratio", "1:15", "extra help"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Multiple intelligences and transversal competences",
+    "content": "The school says it deliberately develops eight forms of intelligence: linguistic, logical-mathematical, spatial, bodily-kinesthetic, musical, interpersonal, intrapersonal and naturalistic. It also says seven transversal competences are integrated into subjects and everyday learning rather than taught only as a separate life-skills period.",
+    "source_label": "JHS Electronic City official website, Philosophy and Pre-Primary",
+    "source_url": "https://jhselectroniccity.com/philosophy.html",
+    "status": "published",
+    "tags": ["multiple intelligences", "eight intelligences", "transversal competences", "life skills", "linguistic", "logical", "spatial", "kinesthetic", "musical", "interpersonal", "intrapersonal", "naturalistic"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Arts, communication and leadership",
+    "content": "The school describes visual arts, vocal and instrumental music, dance, drama, assemblies and productions as timetabled parts of learning rather than optional extras. It says circle time, student responsibilities, presentations and stage opportunities are used to build public speaking, expression, confidence and leadership progressively.",
+    "source_label": "JHS Electronic City official website, Why JHS",
+    "source_url": "https://jhselectroniccity.com/why-jhs.html",
+    "status": "published",
+    "tags": ["visual arts", "music", "dance", "drama", "assemblies", "productions", "public speaking", "leadership", "stage", "communication", "confidence"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Enterprise and real-world skills",
+    "content": "The website describes a Budding Entrepreneur Programme in which children practise developing ideas, planning, budgeting, creating and presenting. It places enterprise, initiative, collaboration and real-world problem-solving within the broader school programme rather than treating them only as occasional events.",
+    "source_label": "JHS Electronic City official website, Why JHS",
+    "source_url": "https://jhselectroniccity.com/why-jhs.html",
+    "status": "published",
+    "tags": ["Budding Entrepreneur Programme", "entrepreneurship", "enterprise", "students learn planning and budgeting", "planning", "budgeting", "initiative", "presentation", "real-world skills", "life skills"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Student wellbeing, health and safety",
+    "content": "The school's public pages describe attentive supervision, secure campus protocols, mindfulness, empathy education, pastoral support and wellbeing as parts of school life. They also describe monitored transport, safe play areas, nutritious meals and extended day care. The website does not publish operational details of security procedures; specific medical, accessibility, allergy, safeguarding or emergency requirements should be confirmed directly with the school.",
+    "source_label": "JHS Electronic City official website, Why JHS and Campus",
+    "source_url": "https://jhselectroniccity.com/why-jhs.html",
+    "status": "published",
+    "tags": ["health", "safety", "security", "wellbeing", "supervision", "pastoral support", "mindfulness", "empathy", "safe campus", "monitored transport", "safeguarding"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Choosing between CBSE and ICSE",
+    "content": "The school presents CBSE and ICSE as equal pathways using the same campus infrastructure, shared community and Finnish-inspired teaching approach. Its published guidance describes CBSE as structured, NCERT-aligned and nationally portable, while ICSE is described as broad, language-rich and analytically focused. Academic counsellors offer a board consultation based on a child's learning style, strengths and family aspirations. The school advises choosing for fit rather than treating either board as universally better.",
+    "source_label": "JHS Electronic City official website, CBSE and ICSE",
+    "source_url": "https://jhselectroniccity.com/cbse.html",
+    "status": "published",
+    "tags": ["CBSE vs ICSE", "compare boards", "which board", "choose a board", "help choose board", "same facilities", "same infrastructure", "board selection", "board counselling", "NCERT", "CISCE", "learning style", "siblings"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Campus status and published facilities",
+    "content": "The official campus page says the Rayasandra Electronic City campus is open for Playgroup through Grade 7 and is designed to grow to Grade 12. It lists STEAM and robotics labs, learning centres, library and reading areas, arts and performance spaces, and sports and movement areas. The page also discloses that some photographs may show the facilities standard at other operating Jain Heritage School campuses while Electronic City-specific photography is being completed; families can confirm the exact current facilities during a booked campus visit.",
+    "source_label": "JHS Electronic City official website, Campus",
+    "source_url": "https://jhselectroniccity.com/campus.html",
+    "status": "published",
+    "tags": ["campus open", "campus status", "facilities", "photographs", "photos", "site visit", "Rayasandra", "STEAM labs", "sports areas", "learning centres"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Contact hours and visit booking",
+    "content": "The Contact page publishes office hours as Monday to Saturday, 9:00 AM to 5:00 PM, and says email replies are normally made within one working day. Campus visits should be booked in advance so a staff member is available. Some website footers display campus hours as 9:30 AM to 5:00 PM, so visitors should call +91 96630 21118 before travelling if the opening time matters.",
+    "source_label": "JHS Electronic City official website, Contact",
+    "source_url": "https://jhselectroniccity.com/contact.html",
+    "status": "published",
+    "tags": ["office hours", "opening hours", "campus hours", "timings", "Monday to Saturday", "9 AM", "9:30 AM", "visit booking", "email reply time"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Careers and job applications",
+    "content": "The careers page covers teaching, administration, information technology, finance, creative and support roles across the Electronic City, Whitefield and Hebbal campuses, with full-time and part-time filters. Openings can change and should be checked on the live careers page. When no suitable role is listed, the page invites applicants to send a resume to info@jhselectroniccity.com. Recruitment enquiries are handled through the careers route rather than the admissions process.",
+    "source_label": "JHS Electronic City official website, Careers",
+    "source_url": "https://jhselectroniccity.com/careers.html",
+    "status": "published",
+    "tags": ["careers", "jobs", "vacancy", "open positions", "teacher jobs", "administration jobs", "IT jobs", "finance jobs", "resume", "CV", "recruitment"]
+  },
+  {
+    "school_id": "jhs-electronic-city",
+    "title": "Published admissions session",
+    "content": "The official website currently advertises admissions for the 2027-28 academic session for Playgroup through Grade 7. This is a time-sensitive website notice, not proof of a live seat in a particular class or board. The current intake year, deadline and seat availability must be confirmed on the live admissions page or with the admissions team before a family acts on it.",
+    "source_label": "JHS Electronic City official website, Home and Admissions",
+    "source_url": "https://jhselectroniccity.com/admissions.html",
+    "status": "published",
+    "tags": ["admissions open", "2027-28", "academic year", "admission session", "intake", "application year", "deadline", "current admissions"]
   }
 ]

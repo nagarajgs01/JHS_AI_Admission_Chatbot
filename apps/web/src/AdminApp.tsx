@@ -7,6 +7,7 @@ import {
   generateAdminSuggestions,
   getAdminQuestion,
   listAdminQuestions,
+  retryAdminEmail,
   saveAdminDraft,
 } from "./api";
 
@@ -183,7 +184,7 @@ export function AdminApp() {
       return;
     }
     const confirmed = window.confirm(
-      "Approve this answer? It will mark the question as answered. Email delivery is not active yet.",
+      "Approve this verified answer? It will be emailed to the parent when an email is available.",
     );
     if (!confirmed) return;
     setLoading(true);
@@ -200,15 +201,40 @@ export function AdminApp() {
         expires_at: publishToKnowledge && expiresAt ? `${expiresAt}T23:59:59Z` : undefined,
         supersede_knowledge_ids: publishToKnowledge ? supersedeIds : [],
       });
-      setNotice(
-        result.knowledge_entry_id
-          ? "Answer approved and published to the knowledge base. Email delivery is not active yet."
-          : "Answer approved and stored. Email delivery is not active yet.",
-      );
+      const knowledgeMessage = result.knowledge_entry_id
+        ? "Answer approved and published to the knowledge base."
+        : "Answer approved and stored.";
+      const deliveryMessage = result.delivery_status === "sent"
+        ? " The parent email was sent."
+        : result.delivery_status === "failed"
+          ? " The email could not be sent; staff can retry from the answered question."
+          : " No parent email was available, so no message was sent.";
+      setNotice(`${knowledgeMessage}${deliveryMessage}`);
       setSelected(undefined);
       setSuggestions([]);
       setAnswer("");
       resetPublication();
+      await loadQueue();
+    } catch (requestError) {
+      setError((requestError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retryEmail() {
+    if (!selected) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const detail = await retryAdminEmail(adminKey, selected.id);
+      setSelected(detail);
+      if (detail.delivery_status === "sent") {
+        setNotice("The approved answer was emailed to the parent.");
+      } else {
+        setError(detail.delivery_error ?? "The email could not be sent.");
+      }
       await loadQueue();
     } catch (requestError) {
       setError((requestError as Error).message);
@@ -316,7 +342,20 @@ export function AdminApp() {
               </>
             )}
 
-            {selected.status !== "open" && selected.latest_answer && <div className="approved-answer"><h3>Latest approved response</h3><p>{selected.latest_answer}</p></div>}
+            {selected.status !== "open" && selected.latest_answer && (
+              <div className="approved-answer">
+                <h3>Latest approved response</h3>
+                <p>{selected.latest_answer}</p>
+                <div className={`delivery-status ${selected.delivery_status ?? "not_applicable"}`}>
+                  <strong>Email delivery: {(selected.delivery_status ?? "not_applicable").replace("_", " ")}</strong>
+                  {selected.delivered_at && <span>Sent {new Date(selected.delivered_at).toLocaleString()}</span>}
+                  {selected.delivery_error && <span>{selected.delivery_error}</span>}
+                  {(selected.delivery_status === "failed" || selected.delivery_status === "pending") && selected.contact_email && (
+                    <button type="button" onClick={() => void retryEmail()} disabled={loading}>Retry email</button>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
         {loading && <div className="admin-loading">Working…</div>}

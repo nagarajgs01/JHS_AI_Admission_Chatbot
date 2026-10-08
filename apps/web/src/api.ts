@@ -86,6 +86,10 @@ export type AdminQuestion = {
   latest_answer?: string;
   response_status?: "draft" | "approved";
   responded_at?: string;
+  latest_response_id?: string;
+  delivery_status?: "pending" | "sent" | "failed" | "not_applicable";
+  delivery_error?: string;
+  delivered_at?: string;
 };
 
 export type AdminSuggestion = {
@@ -109,6 +113,9 @@ export type AdminQuestionResponse = {
   created_at: string;
   approved_at?: string;
   knowledge_entry_id?: string;
+  delivery_status: "pending" | "sent" | "failed" | "not_applicable";
+  delivery_error?: string;
+  delivered_at?: string;
 };
 
 export type AdminApprovalOptions = {
@@ -192,4 +199,11 @@ export function approveAdminAnswer(
   options: AdminApprovalOptions,
 ) {
   return submitAdminAnswer(adminKey, unansweredId, answer, "approve", options);
+}
+
+export function retryAdminEmail(adminKey: string, unansweredId: string): Promise<AdminQuestion> {
+  const query = new URLSearchParams({ school_id: "jhs-electronic-city" });
+  return adminRequest(`/v1/admin/unanswered/${unansweredId}/retry-email?${query}`, adminKey, {
+    method: "POST",
+  });
 }

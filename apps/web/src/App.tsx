@@ -31,7 +31,7 @@ function detailLabel(detail: string) {
 
 export function App() {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", text: "Hello! How can I help with admissions today?" },
+    { role: "assistant", text: "Hello! How can I help you with Jain Heritage School today?" },
   ]);
   const [question, setQuestion] = useState("");
   const [email, setEmail] = useState(getSessionEmail);
@@ -154,18 +154,30 @@ export function App() {
       <section className="intro">
         <span className="eyebrow">Jain Heritage School</span>
         <h1>Discover a joyful way to learn.</h1>
-        <p>Ask about grades, timings, applications, facilities, or admission requirements.</p>
+        <p>Ask about academics, programmes, facilities, campus visits, transport, or admissions.</p>
       </section>
 
-      <section className="chat-card" aria-label="Admissions chat">
-        <header><div className="crest">JGI</div><div><strong>JHS Admissions Assistant</strong><span>Answers from approved school information</span></div></header>
+      <section className="chat-card" aria-label="JHS school information chat">
+        <header><div className="crest">JGI</div><div><strong>JHS School Assistant</strong><span>Answers from approved school information</span></div></header>
         <div className="messages" aria-live="polite">
           {messages.map((message, index) => (
             <article className={`message ${message.role}`} key={`${message.role}-${index}`}>
               <p>{message.text}</p>
-              {message.result?.citations.map((citation) => (
-                <small key={citation.knowledge_id}>Source: {citation.source_label}</small>
-              ))}
+              {message.result && message.result.citations.length > 0 && (
+                <details className="message-sources">
+                  <summary>
+                    View {message.result.citations.length} {message.result.citations.length === 1 ? "source" : "sources"}
+                  </summary>
+                  <div className="source-list">
+                    {message.result.citations.map((citation, citationIndex) => (
+                      <div className="source-item" key={`${citation.knowledge_id}-${citationIndex}`}>
+                        <strong>{citation.title}</strong>
+                        <small>{citation.source_label}</small>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
               {message.result?.outcome === "clarification" && message.result.clarification_kind !== "details" && (
                 <div className="clarification-options">
                   {message.result.suggested_questions.map((suggestedQuestion) => (

@@ -22,6 +22,13 @@ class Settings(BaseModel):
     answer_min_score: float = float(getenv("ANSWER_MIN_SCORE", "0.38"))
     allowed_origins: str = getenv("ALLOWED_ORIGINS", "http://localhost:5173")
     admin_api_key: str = getenv("ADMIN_API_KEY", "change-me-local-only")
+    email_provider: str = getenv("EMAIL_PROVIDER", "disabled")
+    smtp_host: str = getenv("SMTP_HOST", "localhost")
+    smtp_port: int = int(getenv("SMTP_PORT", "1025"))
+    smtp_username: str | None = getenv("SMTP_USERNAME")
+    smtp_password: str | None = getenv("SMTP_PASSWORD")
+    smtp_use_tls: bool = getenv("SMTP_USE_TLS", "false").lower() == "true"
+    email_from: str = getenv("EMAIL_FROM", "admissions@jhselectroniccity.com")
 
 
 @lru_cache

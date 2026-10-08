@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .embeddings import HashingEmbeddingModel, SentenceTransformerEmbeddingModel
+from .email_service import build_email_sender
 from .llm import EvidenceOnlyModel, OllamaModel, VLLMModel
 from .models import (
     AdminAnswerSubmission,
@@ -68,6 +69,34 @@ admin_suggestion_service = AdminSuggestionService(
     language_model,
     settings.answer_min_score,
 )
+email_sender = build_email_sender(settings)
+
+
+async def deliver_approved_answer(item, response: AdminQuestionResponse) -> AdminQuestionResponse:
+    if not item.contact_email or not item.consent_to_contact:
+        return response
+    if not email_sender.enabled:
+        error = "Email delivery is not configured"
+        unanswered.update_delivery(response.id, "failed", error)
+        return response.model_copy(update={"delivery_status": "failed", "delivery_error": error})
+    try:
+        await email_sender.send_parent_answer(
+            item.contact_email,
+            item.question,
+            response.answer,
+        )
+        unanswered.update_delivery(response.id, "sent")
+        refreshed = unanswered.get_for_school(item.school_id, item.id)
+        return response.model_copy(
+            update={
+                "delivery_status": "sent",
+                "delivered_at": refreshed.delivered_at if refreshed else None,
+            }
+        )
+    except Exception as error:  # SMTP/network errors must not roll back approval.
+        message = str(error)[:500] or error.__class__.__name__
+        unanswered.update_delivery(response.id, "failed", message)
+        return response.model_copy(update={"delivery_status": "failed", "delivery_error": message})
 
 
 @asynccontextmanager
@@ -243,6 +272,12 @@ async def approve_answer(
             raise HTTPException(status_code=501, detail="Knowledge publication requires PostgreSQL")
         if not submission.knowledge_title or len(submission.knowledge_title.strip()) < 2:
             raise HTTPException(status_code=422, detail="Knowledge title is required for publication")
+        normalized_title = submission.knowledge_title.strip()
+        if normalized_title.endswith("?"):
+            raise HTTPException(
+                status_code=422,
+                detail="Use a reusable topic title, not the parent's question",
+            )
         if (
             submission.valid_from
             and submission.expires_at
@@ -267,6 +302,7 @@ async def approve_answer(
             unanswered_id,
             submission.answer,
             "approved",
+            "pending" if item.contact_email and item.consent_to_contact else "not_applicable",
         )
         if knowledge_entry_id is not None:
             unanswered.link_resolution(
@@ -278,9 +314,45 @@ async def approve_answer(
             response = response.model_copy(
                 update={"knowledge_entry_id": knowledge_entry_id}
             )
-        return response
+        return await deliver_approved_answer(item, response)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/admin/unanswered/{unanswered_id}/retry-email",
+    response_model=AdminUnansweredQuestion,
+)
+async def retry_parent_email(
+    unanswered_id: UUID,
+    school_id: str,
+    _: AdminAccess,
+) -> AdminUnansweredQuestion:
+    if not isinstance(unanswered, PostgresUnansweredRepository):
+        raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    item = unanswered.get_for_school(school_id, unanswered_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Unanswered question not found")
+    if not item.contact_email or not item.consent_to_contact:
+        raise HTTPException(status_code=409, detail="No consenting parent email is available")
+    if item.response_status != "approved" or not item.latest_response_id or not item.latest_answer:
+        raise HTTPException(status_code=409, detail="No approved answer is available")
+    response = AdminQuestionResponse(
+        id=item.latest_response_id,
+        unanswered_id=item.id,
+        answer=item.latest_answer,
+        status="approved",
+        created_at=item.responded_at or item.created_at,
+        approved_at=item.responded_at,
+        delivery_status=item.delivery_status or "failed",
+        delivery_error=item.delivery_error,
+        delivered_at=item.delivered_at,
+    )
+    await deliver_approved_answer(item, response)
+    refreshed = unanswered.get_for_school(school_id, unanswered_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Unanswered question not found")
+    return refreshed
 
 
 @app.post("/v1/admin/knowledge", response_model=KnowledgeEntry, status_code=201)

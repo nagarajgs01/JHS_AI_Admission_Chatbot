@@ -11,7 +11,7 @@ STOP_WORDS = {
     "from", "have", "how", "i", "in", "is", "it", "me", "of", "on", "or",
     "school", "tell", "the", "there", "to", "what", "when", "where",
     "which", "who", "with", "you", "through", "this", "jhs", "our",
-    "while", "will", "during", "happen", "happens", "get", "time",
+    "while", "will", "during", "happen", "happens", "get", "time", "us",
     "use", "uses", "used", "idea", "ideas",
 }
 
@@ -41,6 +41,16 @@ def normalize_token(token: str) -> str:
         "transports": "transport",
         "buses": "bus",
         "studies": "study",
+        "students": "student",
+        "booked": "book",
+        "booking": "book",
+        "visiting": "visit",
+        "visited": "visit",
+        "visits": "visit",
+        "applied": "apply",
+        "applying": "apply",
+        "reflecting": "reflect",
+        "reflected": "reflect",
     }
     return aliases.get(token, token)
 
