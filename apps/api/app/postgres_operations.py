@@ -226,6 +226,29 @@ class PostgresUnansweredRepository:
                     raise LookupError("Unanswered question not found")
             connection.commit()
 
+    def link_resolution(
+        self,
+        school_id: str,
+        unanswered_id: UUID,
+        knowledge_entry_id: UUID,
+    ) -> None:
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE unanswered_questions uq
+                    SET resolution_knowledge_entry_id = %s
+                    FROM schools s
+                    WHERE uq.id = %s
+                      AND uq.school_id = s.id
+                      AND s.slug = %s
+                    """,
+                    (knowledge_entry_id, unanswered_id, school_id),
+                )
+                if cursor.rowcount != 1:
+                    raise LookupError("Unanswered question not found")
+            connection.commit()
+
 
 class PostgresLeadRepository:
     def create(self, submission: LeadSubmission) -> Lead:

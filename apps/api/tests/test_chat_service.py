@@ -7,6 +7,7 @@ from app.llm import EvidenceOnlyModel
 from app.models import ChatRequest, KnowledgeEntry, KnowledgeStatus
 from app.retrieval import InMemoryKnowledgeRepository
 from app.service import ChatService, ESCALATION_MESSAGE, UnansweredRepository
+from app.retrieval_policy import has_likely_typo
 
 
 class HallucinatingModel:
@@ -20,6 +21,20 @@ class HallucinatingModel:
 
     async def health(self):
         return True
+
+
+class CountingEvidenceModel(EvidenceOnlyModel):
+    def __init__(self):
+        self.understanding_calls = 0
+
+    async def understand(self, question):
+        self.understanding_calls += 1
+        return await super().understand(question)
+
+
+def test_normal_word_forms_do_not_trigger_typo_understanding_path():
+    assert not has_likely_typo("What are the transportation options?")
+    assert not has_likely_typo("What fees apply to different grades?")
 
 
 @pytest.mark.asyncio
@@ -42,6 +57,32 @@ async def test_answers_from_published_same_school_content():
     assert response.outcome == "answered"
     assert "15 km" in response.answer
     assert response.citations[0].source_label == "Transport policy"
+
+
+@pytest.mark.asyncio
+async def test_clear_general_question_uses_fast_path_and_contextual_synonyms():
+    repo = InMemoryKnowledgeRepository(
+        [
+            KnowledgeEntry(
+                school_id="school-a",
+                title="Transport and extended day care",
+                content="The school offers transport services based on route feasibility.",
+                source_label="Approved campus information",
+                status=KnowledgeStatus.PUBLISHED,
+                tags=["transport", "bus", "route"],
+            )
+        ]
+    )
+    model = CountingEvidenceModel()
+    service = ChatService(repo, UnansweredRepository(), model, min_score=0.38)
+
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="What are the transportation options?")
+    )
+
+    assert response.outcome == "answered"
+    assert "transport services" in response.answer
+    assert model.understanding_calls == 0
 
 
 @pytest.mark.asyncio

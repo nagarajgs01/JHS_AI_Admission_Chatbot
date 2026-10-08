@@ -12,8 +12,12 @@ then checked by the grounding verifier; unsupported drafts are discarded.
 ## No-evidence path
 
 When retrieval has no directly supporting evidence, the model is not asked to invent
-an answer. The API returns only deterministic callback drafts that tell the parent the
-school must confirm the requested information.
+an answer. The API returns an intent-specific fill-in template with mandatory
+`[[PLACEHOLDERS]]`, plus a safe callback draft. Templates are deterministic rather than
+model-generated, so a missing fact cannot silently turn into a plausible guess.
+
+Drafts may be saved with placeholders. Approval is blocked in both React and FastAPI
+until every placeholder has been replaced with verified school information.
 
 ## Admin contract
 

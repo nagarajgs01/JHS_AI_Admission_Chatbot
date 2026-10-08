@@ -23,14 +23,16 @@ DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "marks": ("whole child", "rank", "examinations"),
     "entrance": ("interaction", "admission assessment", "test"),
     "email": ("contact", "email address", "info@jhselectroniccity.com"),
+    "study": ("academics", "grades", "curriculum", "board", "CBSE", "ICSE"),
+    "transport": ("bus", "route", "pickup", "drop-off"),
 }
 
 DOMAIN_VOCABULARY = {
-    "admission", "badminton", "basketball", "cbse", "child", "class",
+    "admission", "badminton", "basketball", "board", "cbse", "child", "class",
     "contact", "cricket", "curriculum", "dance", "fee", "finnish",
-    "food", "grade", "icse", "library", "location", "meal", "montessori",
-    "music", "play", "playing", "school", "sports", "syllabus", "swimming",
-    "transport", "yoga",
+    "follow", "food", "grade", "icse", "library", "location", "meal", "montessori",
+    "music", "option", "play", "playing", "school", "sports", "study", "syllabus", "swimming",
+    "transport", "transportation", "bus", "buses", "route", "yoga",
 }
 
 
@@ -94,6 +96,13 @@ def expand_query(query: str) -> str:
             continue
         if trigger in terms:
             additions.extend(synonyms)
+    # "Options" has no universal school-domain meaning. Expand it only from the
+    # surrounding topic instead of forcing every options question toward curriculum.
+    if "option" in terms:
+        if terms & {"study", "board", "curriculum", "syllabus", "academic"}:
+            additions.extend(("grades", "curriculum", "board", "CBSE", "ICSE"))
+        elif terms & {"transport", "bus", "route"}:
+            additions.extend(("bus", "route", "pickup", "drop-off"))
     if "enquiry" in terms and {"detail", "details", "information", "needed"} & terms:
         additions.extend(("child name", "date of birth", "grade", "contact number"))
     for raw_token in TOKEN_RE.findall(query.lower()):
@@ -105,7 +114,7 @@ def expand_query(query: str) -> str:
         )
         if (
             raw_token != closest
-            and SequenceMatcher(None, raw_token, closest).ratio() >= 0.84
+            and SequenceMatcher(None, raw_token, closest).ratio() >= 0.80
         ):
             additions.append(closest)
     if not additions:
@@ -225,3 +234,24 @@ def typo_tolerant_query_tokens(query: str) -> set[str]:
         )
         terms.add(normalize_token(corrected))
     return terms
+
+
+def has_likely_typo(query: str) -> bool:
+    for raw_token in TOKEN_RE.findall(query.lower()):
+        if len(raw_token) < 4 or raw_token in STOP_WORDS:
+            continue
+        # Known grammatical forms such as options→option, fees→fee and
+        # transportation→transport are normalization, not spelling mistakes.
+        normalized_token = normalize_token(raw_token)
+        if normalized_token != raw_token:
+            continue
+        closest = max(
+            DOMAIN_VOCABULARY,
+            key=lambda candidate: SequenceMatcher(None, raw_token, candidate).ratio(),
+        )
+        if (
+            raw_token != closest
+            and SequenceMatcher(None, raw_token, closest).ratio() >= 0.80
+        ):
+            return True
+    return False

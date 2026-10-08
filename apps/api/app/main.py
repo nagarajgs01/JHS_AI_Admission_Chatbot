@@ -30,6 +30,7 @@ from .service import (
     ChatService,
     LeadRepository,
     UnansweredRepository,
+    answer_has_placeholders,
 )
 
 
@@ -225,13 +226,59 @@ async def approve_answer(
 ) -> AdminQuestionResponse:
     if not isinstance(unanswered, PostgresUnansweredRepository):
         raise HTTPException(status_code=501, detail="Admin queue requires PostgreSQL")
+    if answer_has_placeholders(submission.answer):
+        raise HTTPException(
+            status_code=422,
+            detail="Replace every [[PLACEHOLDER]] before approving the answer",
+        )
+    item = unanswered.get_for_school(submission.school_id, unanswered_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Unanswered question not found")
+    if item.status != "open":
+        raise HTTPException(status_code=409, detail="Question is no longer open")
+    knowledge_entry_id = None
+    superseded_ids: list[UUID] = []
+    if submission.publish_to_knowledge:
+        if not isinstance(knowledge, PostgresKnowledgeRepository):
+            raise HTTPException(status_code=501, detail="Knowledge publication requires PostgreSQL")
+        if not submission.knowledge_title or len(submission.knowledge_title.strip()) < 2:
+            raise HTTPException(status_code=422, detail="Knowledge title is required for publication")
+        if (
+            submission.valid_from
+            and submission.expires_at
+            and submission.expires_at <= submission.valid_from
+        ):
+            raise HTTPException(status_code=422, detail="Expiry must be after the valid-from date")
+        knowledge_entry_id = knowledge.publish_reviewed_answer(
+            submission.school_id,
+            submission.knowledge_title,
+            submission.answer,
+            submission.valid_from,
+            submission.expires_at,
+        )
+        superseded_ids = [
+            entry_id
+            for entry_id in submission.supersede_knowledge_ids
+            if entry_id != knowledge_entry_id
+        ]
     try:
-        return unanswered.save_answer(
+        response = unanswered.save_answer(
             submission.school_id,
             unanswered_id,
             submission.answer,
             "approved",
         )
+        if knowledge_entry_id is not None:
+            unanswered.link_resolution(
+                submission.school_id,
+                unanswered_id,
+                knowledge_entry_id,
+            )
+            knowledge.archive_entries(submission.school_id, superseded_ids)
+            response = response.model_copy(
+                update={"knowledge_entry_id": knowledge_entry_id}
+            )
+        return response
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

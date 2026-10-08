@@ -36,6 +36,11 @@ def normalize_token(token: str) -> str:
         "assessed": "assessment",
         "assessing": "assessment",
         "assessments": "assessment",
+        "options": "option",
+        "transportation": "transport",
+        "transports": "transport",
+        "buses": "bus",
+        "studies": "study",
     }
     return aliases.get(token, token)
 
@@ -98,6 +103,38 @@ class InMemoryKnowledgeRepository:
             hits.append(SearchHit(entry=entry, score=round(score, 4)))
 
         return sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit]
+
+    def clarification_candidates(
+        self,
+        school_id: str,
+        query: str,
+        limit: int = 3,
+    ) -> list[SearchHit]:
+        from difflib import SequenceMatcher
+
+        query_tokens = tokenize(query)
+        candidates: list[SearchHit] = []
+        for entry in self.entries:
+            if (
+                entry.school_id != school_id
+                or entry.status != KnowledgeStatus.PUBLISHED
+                or not self._is_active(entry)
+            ):
+                continue
+            document_tokens = tokenize(f"{entry.title} {' '.join(entry.tags)}")
+            exact = len(query_tokens & document_tokens) / max(1, len(query_tokens))
+            fuzzy = max(
+                (
+                    SequenceMatcher(None, left, right).ratio()
+                    for left in query_tokens
+                    for right in document_tokens
+                ),
+                default=0.0,
+            )
+            score = max(exact, fuzzy * 0.55)
+            if score >= 0.35:
+                candidates.append(SearchHit(entry=entry, score=round(score, 4)))
+        return sorted(candidates, key=lambda hit: hit.score, reverse=True)[:limit]
 
 
 class InMemoryHybridKnowledgeRepository(InMemoryKnowledgeRepository):

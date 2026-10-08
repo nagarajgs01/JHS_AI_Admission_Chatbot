@@ -38,15 +38,30 @@ class ChatRequest(BaseModel):
     school_id: str = Field(min_length=2, max_length=80)
     message: str = Field(min_length=2, max_length=2000)
     conversation_id: UUID | None = None
+    force_escalation: bool = False
+    context: dict[str, str] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):
     conversation_id: UUID
     answer: str
-    outcome: str
+    outcome: Literal["answered", "clarification", "escalated", "out_of_scope"]
     confidence: float
     citations: list[Citation] = Field(default_factory=list)
     unanswered_id: UUID | None = None
+    suggested_questions: list[str] = Field(default_factory=list)
+    clarification_question: str | None = None
+    clarification_kind: Literal["choice", "details"] | None = None
+    required_details: list[str] = Field(default_factory=list)
+
+
+class QueryUnderstanding(BaseModel):
+    normalized_question: str
+    scope: Literal["school", "out_of_scope"]
+    clarity: Literal["clear", "ambiguous"]
+    intent: str = "general_school_enquiry"
+    requested_facts: list[str] = Field(default_factory=list)
+    missing_details: list[str] = Field(default_factory=list)
 
 
 class EscalationContact(BaseModel):
@@ -83,6 +98,11 @@ class AdminUnansweredQuestion(UnansweredQuestion):
 class AdminAnswerSubmission(BaseModel):
     school_id: str = Field(min_length=2, max_length=80)
     answer: str = Field(min_length=2, max_length=5000)
+    publish_to_knowledge: bool = False
+    knowledge_title: str | None = Field(default=None, max_length=200)
+    valid_from: datetime | None = None
+    expires_at: datetime | None = None
+    supersede_knowledge_ids: list[UUID] = Field(default_factory=list)
 
 
 class AdminQuestionResponse(BaseModel):
@@ -92,11 +112,12 @@ class AdminQuestionResponse(BaseModel):
     status: Literal["draft", "approved"]
     created_at: datetime
     approved_at: datetime | None = None
+    knowledge_entry_id: UUID | None = None
 
 
 class AdminAnswerSuggestion(BaseModel):
     answer: str
-    kind: Literal["grounded", "callback"]
+    kind: Literal["grounded", "template", "callback"]
     requires_staff_verification: bool = True
     citations: list[Citation] = Field(default_factory=list)
 

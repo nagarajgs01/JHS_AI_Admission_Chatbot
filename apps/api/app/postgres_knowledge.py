@@ -72,6 +72,97 @@ class PostgresKnowledgeRepository:
             for index, row in enumerate(supported_rows)
         ]
 
+    def clarification_candidates(
+        self,
+        school_id: str,
+        query: str,
+        limit: int = 3,
+    ) -> list[SearchHit]:
+        """Return related published topics without treating them as answer evidence."""
+
+        expanded_query = expand_query(query)
+        query_embedding = self.embedding_model.embed([expanded_query])[0]
+        rows = search_entries(school_id, query, query_embedding, max(limit * 3, 8))
+        candidates: list[SearchHit] = []
+        seen_titles: set[str] = set()
+        for row in rows:
+            score = float(row["combined_score"])
+            semantic = float(row["semantic_score"])
+            lexical_signal = float(row["keyword_score"]) > 0 or float(row["synonym_score"]) > 0
+            if score < 0.18 or (not lexical_signal and semantic < 0.38):
+                continue
+            normalized_title = row["title"].strip().lower()
+            if normalized_title in seen_titles:
+                continue
+            seen_titles.add(normalized_title)
+            candidates.append(
+                SearchHit(
+                    entry=KnowledgeEntry(
+                        id=row["id"],
+                        school_id=school_id,
+                        title=row["title"],
+                        content=row["content"],
+                        source_label=row["source_label"],
+                        source_url=row["source_url"],
+                        status="published",
+                        tags=row["tags"],
+                        valid_from=row["valid_from"],
+                        expires_at=row["expires_at"],
+                    ),
+                    score=round(score, 4),
+                )
+            )
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    def publish_reviewed_answer(
+        self,
+        school_id: str,
+        title: str,
+        content: str,
+        valid_from=None,
+        expires_at=None,
+    ) -> UUID:
+        entry = KnowledgeEntry(
+            school_id=school_id,
+            title=title.strip(),
+            content=content.strip(),
+            source_label="School-authority approved response",
+            status="published",
+            tags=["school-approved", "admin-resolution"],
+            valid_from=valid_from,
+            expires_at=expires_at,
+        )
+        ingest_entries(
+            school_id,
+            "Jain Heritage School Electronic City",
+            [entry],
+            self.embedding_model,
+        )
+        return stable_entry_id(entry)
+
+    def archive_entries(self, school_id: str, entry_ids: list[UUID]) -> int:
+        if not entry_ids:
+            return 0
+        with database_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE knowledge_entries ke
+                    SET status = 'archived', updated_at = now()
+                    FROM schools s
+                    WHERE ke.school_id = s.id
+                      AND s.slug = %s
+                      AND ke.id = ANY(%s)
+                      AND ke.status = 'published'
+                    """,
+                    (school_id, entry_ids),
+                )
+                archived = cursor.rowcount
+            connection.commit()
+        return archived
+
 
 def stable_entry_id(entry: KnowledgeEntry) -> UUID:
     identity = f"{entry.school_id}|{entry.title}|{entry.source_label}"
