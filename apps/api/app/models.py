@@ -34,12 +34,18 @@ class Citation(BaseModel):
     score: float
 
 
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class ChatRequest(BaseModel):
     school_id: str = Field(min_length=2, max_length=80)
     message: str = Field(min_length=2, max_length=2000)
     conversation_id: UUID | None = None
     force_escalation: bool = False
     context: dict[str, str] = Field(default_factory=dict)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=10)
 
 
 class ChatResponse(BaseModel):

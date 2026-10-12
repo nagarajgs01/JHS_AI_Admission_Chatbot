@@ -14,7 +14,13 @@ import {
 type QueueStatus = AdminQuestion["status"];
 
 function splitQuestionContext(rawQuestion: string) {
-  const [question, detailsBlock = ""] = rawQuestion.split(/\n\s*ADDITIONAL DETAILS\s*\n/i, 2);
+  const question = rawQuestion.split(/\n\s*(?:ADDITIONAL DETAILS|RECENT CONVERSATION)\s*\n/i, 1)[0];
+  const detailsBlock = rawQuestion.match(
+    /\n\s*ADDITIONAL DETAILS\s*\n([\s\S]*?)(?=\n\s*RECENT CONVERSATION\s*\n|$)/i,
+  )?.[1] ?? "";
+  const historyBlock = rawQuestion.match(
+    /\n\s*RECENT CONVERSATION\s*\n([\s\S]*?)(?=\n\s*ADDITIONAL DETAILS\s*\n|$)/i,
+  )?.[1] ?? "";
   const details = detailsBlock
     .split("\n")
     .map((line) => line.replace(/^\s*-\s*/, "").trim())
@@ -25,7 +31,11 @@ function splitQuestionContext(rawQuestion: string) {
         ? { label: "Additional detail", value: line }
         : { label: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() };
     });
-  return { question: question.trim(), details };
+  const history = historyBlock
+    .split("\n")
+    .map((line) => line.replace(/^\s*-\s*/, "").trim())
+    .filter(Boolean);
+  return { question: question.trim(), details, history };
 }
 
 function reusableKnowledgeTitle(rawQuestion: string) {
@@ -247,13 +257,16 @@ export function AdminApp() {
     return (
       <main className="admin-login-shell">
         <form className="admin-login" onSubmit={login}>
-          <span className="eyebrow">JHS Electronic City</span>
+          <div className="brand-lockup">
+            <div className="brand-monogram" aria-hidden="true"><span>JHS</span></div>
+            <div className="brand-copy"><strong>Jain Heritage School</strong><span>Electronic City</span></div>
+          </div>
           <h1>School response desk</h1>
           <p>Enter the private admin key to review parent questions.</p>
           <label>Admin key<input type="password" value={keyInput} onChange={(event) => setKeyInput(event.target.value)} autoComplete="current-password" /></label>
           <button type="submit">Open response desk</button>
           {error && <p className="admin-error">{error}</p>}
-          <a href="/">Return to admissions assistant</a>
+          <a href="/">Return to school assistant</a>
         </form>
       </main>
     );
@@ -262,7 +275,10 @@ export function AdminApp() {
   return (
     <main className="admin-shell">
       <header className="admin-topbar">
-        <div><span className="eyebrow">Jain Heritage School</span><strong>Response desk</strong></div>
+        <div className="brand-lockup brand-lockup--on-dark">
+          <div className="brand-monogram" aria-hidden="true"><span>JHS</span></div>
+          <div className="brand-copy"><strong>Jain Heritage School</strong><span>Electronic City · Response desk</span></div>
+        </div>
         <nav><a href="/">Public assistant</a><button type="button" className="secondary-button" onClick={logout}>Sign out</button></nav>
       </header>
 
@@ -304,6 +320,16 @@ export function AdminApp() {
                       <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>
                     ))}
                   </dl>
+                </section>
+              )}
+              {splitQuestionContext(selected.question).history.length > 0 && (
+                <section className="conversation-context">
+                  <strong>Recent conversation context</strong>
+                  <ol>
+                    {splitQuestionContext(selected.question).history.map((line, index) => (
+                      <li key={`${index}-${line}`}>{line}</li>
+                    ))}
+                  </ol>
                 </section>
               )}
               <dl><div><dt>Parent email</dt><dd>{selected.contact_email ?? "Not provided"}</dd></div><div><dt>Received</dt><dd>{new Date(selected.created_at).toLocaleString()}</dd></div></dl>

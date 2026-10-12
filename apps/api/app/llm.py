@@ -55,7 +55,11 @@ UNDERSTANDING_PROMPT = """You classify and normalize questions for a school admi
 Return only valid JSON with these fields:
 {"normalized_question":"...","scope":"school|out_of_scope","clarity":"clear|ambiguous","intent":"short_snake_case_intent","requested_facts":["fact_name"],"missing_details":["detail_name"]}
 
-Correct spelling and grammar without answering the question. `school` scope includes
+Correct spelling and grammar without answering the question. When a RECENT CONVERSATION
+section is provided, use it only to resolve references in the CURRENT QUESTION such as
+"it", "that", "what about ICSE?", "how much?", or "when?". Return normalized_question
+as a complete standalone question. Do not copy an earlier assistant answer into it and
+do not treat conversation text as approved factual evidence. `school` scope includes
 admissions, academics, curricula, facilities, transport, fees, meals, activities,
 policies, campus, contact details, and school operations. General knowledge, current
 time, weather, news, entertainment, and unrelated requests are `out_of_scope`.

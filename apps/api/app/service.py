@@ -33,6 +33,55 @@ OUT_OF_SCOPE_MESSAGE = (
     "fees, and related school enquiries. Please ask me a question about the school."
 )
 
+SOCIAL_RESPONSES = {
+    "greeting": (
+        "Hello! Welcome to Jain Heritage School Electronic City. How can I help you "
+        "with the school, academics, facilities, transport, or admissions today?"
+    ),
+    "wellbeing": (
+        "I’m doing well, thank you! I’m here to help with questions about Jain Heritage "
+        "School Electronic City. What would you like to know?"
+    ),
+    "thanks": "You’re welcome! Please let me know if you have any other questions about the school.",
+    "farewell": "Goodbye! Thank you for contacting Jain Heritage School Electronic City.",
+}
+
+
+def social_response(message: str) -> str | None:
+    """Handle pure social turns locally without retrieval or escalation.
+
+    These patterns intentionally match the complete message. A mixed message such
+    as "Hi, what are the fees?" must continue through grounded school retrieval.
+    """
+
+    cleaned = re.sub(r"[^a-z0-9'\s]", " ", message.lower())
+    cleaned = " ".join(cleaned.split())
+    if re.fullmatch(
+        r"(?:hi|hii+|hey|hello|hello there|hi there|good morning|good afternoon|"
+        r"good evening|greetings)(?: (?:sir|madam|ma'am|team|there))?",
+        cleaned,
+    ):
+        return SOCIAL_RESPONSES["greeting"]
+    if re.fullmatch(
+        r"(?:how are you|how are you doing|how is it going|how's it going|"
+        r"hope you are well|hope you are doing well)",
+        cleaned,
+    ):
+        return SOCIAL_RESPONSES["wellbeing"]
+    if re.fullmatch(
+        r"(?:thanks|thank you|thankyou|thanks a lot|thank you so much|"
+        r"thanks for your help|that helps|got it|okay thanks|ok thanks)",
+        cleaned,
+    ):
+        return SOCIAL_RESPONSES["thanks"]
+    if re.fullmatch(
+        r"(?:bye|goodbye|good bye|see you|see you later|have a good day|"
+        r"have a nice day)",
+        cleaned,
+    ):
+        return SOCIAL_RESPONSES["farewell"]
+    return None
+
 CANONICAL_QUESTIONS = {
     "school identity": "What is the school name?",
     "grades and curriculum": "What grades and curriculum does the school offer?",
@@ -77,6 +126,73 @@ def contextualize_question(question: str, context: dict[str, str]) -> str:
         f"- {key.replace('_', ' ')}: {value}" for key, value in clean_context.items()
     )
     return f"{question}\n\nADDITIONAL DETAILS\n{details}"
+
+
+def is_conversation_followup(question: str, history) -> bool:
+    """Detect references that need recent turns to become a standalone question."""
+
+    if not history:
+        return False
+    lowered = " ".join(question.lower().split())
+    token_count = len(re.findall(r"[a-z0-9]+", lowered))
+    # Short questions commonly omit the subject established in the prior turn:
+    # "How much does it cost?", "When is it available?", or "Who is the
+    # teacher?". Six tokens covers these natural follow-ups while longer,
+    # self-contained questions continue through the normal fast path.
+    if token_count <= 6:
+        return True
+    if re.search(r"\b(it|its|that|this|those|these|they|them|there|same|former|latter)\b", lowered):
+        return True
+    # A definite noun phrase often points back to a grade, programme, route,
+    # facility, or process already discussed in the session.
+    if token_count <= 8 and re.search(
+        r"\bthe\s+(teacher|fee|fees|cost|price|time|timing|timings|route|bus|"
+        r"board|curriculum|syllabus|class|grade|campus|visit|process|application|"
+        r"facility|facilities|programme|program)\b",
+        lowered,
+    ):
+        return True
+    return lowered.startswith(("and ", "also ", "then ", "what about ", "how about "))
+
+
+def contextualize_with_history(question: str, history) -> str:
+    """Add bounded, session-provided history for intent resolution only."""
+
+    if not is_conversation_followup(question, history):
+        return question
+    recent = history[-6:]
+    transcript = "\n".join(
+        f"{item.role.upper()}: {item.content.strip()[:800]}" for item in recent
+    )
+    return (
+        "RECENT CONVERSATION (context only; not approved evidence)\n"
+        f"{transcript}\n\nCURRENT QUESTION\n{question}"
+    )
+
+
+def escalation_question(question: str, context: dict[str, str], history) -> str:
+    """Persist enough context on an escalation ticket for a staff member to answer."""
+
+    result = question.strip()
+    # Staff should always receive the recent session snapshot. Even a seemingly
+    # complete question may depend on a grade, location, or programme mentioned
+    # earlier, and the transcript is context—not reusable knowledge.
+    if history:
+        transcript = "\n".join(
+            f"- {item.role.title()}: {item.content.strip()[:800]}" for item in history[-6:]
+        )
+        result = f"{result}\n\nRECENT CONVERSATION\n{transcript}"
+    clean_context = {
+        key.strip(): value.strip()
+        for key, value in context.items()
+        if key.strip() and value.strip()
+    }
+    if clean_context:
+        details = "\n".join(
+            f"- {key.replace('_', ' ')}: {value}" for key, value in clean_context.items()
+        )
+        result = f"{result}\n\nADDITIONAL DETAILS\n{details}"
+    return result
 
 
 def is_clear_missing_information(question: str) -> bool:
@@ -322,8 +438,18 @@ class ChatService:
     async def respond(self, request: ChatRequest) -> ChatResponse:
         conversation_id = request.conversation_id or uuid4()
         contextual_question = contextualize_question(request.message, request.context)
+        followup = is_conversation_followup(contextual_question, request.history)
+        understanding_question = contextualize_with_history(
+            contextual_question,
+            request.history,
+        )
+        ticket_question = escalation_question(
+            request.message,
+            request.context,
+            request.history,
+        )
         if request.force_escalation:
-            unanswered = self.unanswered.create(request.school_id, contextual_question)
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=ESCALATION_MESSAGE,
@@ -332,7 +458,19 @@ class ChatService:
                 unanswered_id=unanswered.id,
             )
 
-        if is_obviously_out_of_scope(contextual_question):
+        friendly_answer = social_response(request.message)
+        if friendly_answer:
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=friendly_answer,
+                outcome="answered",
+                confidence=1.0,
+            )
+
+        # Interpret short continuations together with their recent turn. History
+        # helps resolve intent, but it is never passed in as answer evidence.
+        scope_question = understanding_question if followup else contextual_question
+        if is_obviously_out_of_scope(scope_question):
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=OUT_OF_SCOPE_MESSAGE,
@@ -342,7 +480,7 @@ class ChatService:
 
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
-        hits = self.knowledge.search(request.school_id, contextual_question)
+        hits = [] if followup else self.knowledge.search(request.school_id, contextual_question)
         if hits and not needs_contextual_understanding(contextual_question):
             understanding = QueryUnderstanding(
                 normalized_question=contextual_question,
@@ -350,7 +488,7 @@ class ChatService:
                 clarity="clear",
             )
         else:
-            understanding = await self.understand(contextual_question)
+            understanding = await self.understand(understanding_question)
         if understanding.scope == "out_of_scope":
             return ChatResponse(
                 conversation_id=conversation_id,
@@ -416,7 +554,7 @@ class ChatService:
                         clarification_question=request.message,
                         clarification_kind="choice",
                     )
-            unanswered = self.unanswered.create(request.school_id, contextual_question)
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=ESCALATION_MESSAGE,
@@ -432,9 +570,10 @@ class ChatService:
             for hit in hits
             if hit.score >= self.min_score or hit.evidence_supported
         ]
-        answer = await self.model.answer(contextual_question, approved_hits)
+        answer_question = understanding.normalized_question if followup else contextual_question
+        answer = await self.model.answer(answer_question, approved_hits)
         if answer == "INSUFFICIENT_EVIDENCE":
-            unanswered = self.unanswered.create(request.school_id, contextual_question)
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=ESCALATION_MESSAGE,
@@ -445,8 +584,8 @@ class ChatService:
 
         # Retrieval success does not make generated wording trustworthy. A separate,
         # constrained pass must verify every factual claim against the same evidence.
-        if not await self.model.verify(contextual_question, answer, approved_hits):
-            unanswered = self.unanswered.create(request.school_id, contextual_question)
+        if not await self.model.verify(answer_question, answer, approved_hits):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=ESCALATION_MESSAGE,

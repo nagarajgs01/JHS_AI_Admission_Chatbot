@@ -4,9 +4,23 @@ from uuid import UUID
 import pytest
 
 from app.llm import EvidenceOnlyModel
-from app.models import ChatRequest, KnowledgeEntry, KnowledgeStatus
+from app.models import (
+    ChatHistoryMessage,
+    ChatRequest,
+    KnowledgeEntry,
+    KnowledgeStatus,
+    QueryUnderstanding,
+)
 from app.retrieval import InMemoryKnowledgeRepository
-from app.service import ChatService, ESCALATION_MESSAGE, UnansweredRepository
+from app.service import (
+    ChatService,
+    ESCALATION_MESSAGE,
+    UnansweredRepository,
+    contextualize_with_history,
+    escalation_question,
+    is_conversation_followup,
+    social_response,
+)
 from app.retrieval_policy import has_likely_typo
 
 
@@ -32,9 +46,141 @@ class CountingEvidenceModel(EvidenceOnlyModel):
         return await super().understand(question)
 
 
+class FollowupEvidenceModel(EvidenceOnlyModel):
+    def __init__(self, normalized_question: str):
+        self.normalized_question = normalized_question
+        self.understanding_input = ""
+
+    async def understand(self, question):
+        self.understanding_input = question
+        return QueryUnderstanding(
+            normalized_question=self.normalized_question,
+            scope="school",
+            clarity="clear",
+            intent="transport",
+            requested_facts=["transport"],
+        )
+
+
 def test_normal_word_forms_do_not_trigger_typo_understanding_path():
     assert not has_likely_typo("What are the transportation options?")
     assert not has_likely_typo("What fees apply to different grades?")
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_text"),
+    [
+        ("Hello!", "Welcome"),
+        ("How are you?", "doing well"),
+        ("Thank you", "welcome"),
+        ("Goodbye", "Goodbye"),
+    ],
+)
+def test_pure_social_messages_get_friendly_responses(message, expected_text):
+    assert expected_text in social_response(message)
+
+
+def test_mixed_greeting_and_school_question_is_not_consumed_as_small_talk():
+    assert social_response("Hi, what are the school fees?") is None
+
+
+@pytest.mark.asyncio
+async def test_social_message_does_not_create_an_unanswered_ticket():
+    unanswered = UnansweredRepository()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]), unanswered, EvidenceOnlyModel(), min_score=0.38
+    )
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="Thank you!")
+    )
+    assert response.outcome == "answered"
+    assert response.citations == []
+    assert response.unanswered_id is None
+    assert unanswered.items == {}
+
+
+def test_short_followup_uses_only_session_history():
+    history = [
+        ChatHistoryMessage(role="user", content="Does the school provide transport?"),
+        ChatHistoryMessage(role="assistant", content="Yes, subject to route feasibility."),
+    ]
+    assert is_conversation_followup("What about the fee?", history)
+    prompt = contextualize_with_history("What about the fee?", history)
+    assert "Does the school provide transport?" in prompt
+    assert "CURRENT QUESTION\nWhat about the fee?" in prompt
+
+
+def test_natural_short_cost_question_is_a_followup():
+    history = [
+        ChatHistoryMessage(role="user", content="Do you have transportation?"),
+        ChatHistoryMessage(role="assistant", content="Yes, transport is available."),
+    ]
+    assert is_conversation_followup("How much does it costs?", history)
+    prompt = contextualize_with_history("How much does it costs?", history)
+    assert "Do you have transportation?" in prompt
+
+
+def test_escalated_followup_keeps_context_for_school_staff():
+    history = [
+        ChatHistoryMessage(role="user", content="Does the school provide transport?"),
+        ChatHistoryMessage(role="assistant", content="Transport depends on the route."),
+    ]
+    stored = escalation_question("What about my area?", {"pickup_area": "JP Nagar"}, history)
+    assert stored.startswith("What about my area?")
+    assert "RECENT CONVERSATION" in stored
+    assert "Does the school provide transport?" in stored
+    assert "pickup area: JP Nagar" in stored
+
+
+@pytest.mark.asyncio
+async def test_followup_is_rewritten_then_grounded_in_approved_evidence():
+    repo = InMemoryKnowledgeRepository(
+        [
+            KnowledgeEntry(
+                school_id="school-a",
+                title="Transport fee policy",
+                content="Transport fees depend on the route and pickup location.",
+                source_label="Approved transport policy",
+                status=KnowledgeStatus.PUBLISHED,
+                tags=["transport", "bus", "fee", "route"],
+            )
+        ]
+    )
+    model = FollowupEvidenceModel("How is the school transport fee calculated?")
+    service = ChatService(repo, UnansweredRepository(), model, min_score=0.1)
+    history = [
+        ChatHistoryMessage(role="user", content="Does the school provide buses?"),
+        ChatHistoryMessage(role="assistant", content="Yes, transport is available."),
+    ]
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a", message="What about the fee?", history=history
+        )
+    )
+    assert response.outcome == "answered"
+    assert "Transport fees depend" in response.answer
+    assert "RECENT CONVERSATION" in model.understanding_input
+    assert response.citations[0].source_label == "Approved transport policy"
+
+
+@pytest.mark.asyncio
+async def test_unanswerable_followup_ticket_contains_recent_conversation():
+    model = FollowupEvidenceModel("Who is the current Grade 5 class teacher?")
+    unanswered = UnansweredRepository()
+    service = ChatService(InMemoryKnowledgeRepository([]), unanswered, model, min_score=0.38)
+    history = [
+        ChatHistoryMessage(role="user", content="My child is applying to Grade 5."),
+        ChatHistoryMessage(role="assistant", content="Grade 5 applications are supported."),
+    ]
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a", message="Who is the teacher?", history=history
+        )
+    )
+    assert response.outcome == "escalated"
+    stored = unanswered.get(response.unanswered_id)
+    assert stored is not None
+    assert "My child is applying to Grade 5." in stored.question
 
 
 @pytest.mark.asyncio

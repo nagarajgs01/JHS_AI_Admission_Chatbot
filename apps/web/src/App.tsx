@@ -1,5 +1,5 @@
-import { FormEvent, useState } from "react";
-import { ChatResponse, LeadInput, sendQuestion, submitContact, submitLead } from "./api";
+import { FormEvent, KeyboardEvent, useState } from "react";
+import { ChatHistoryMessage, ChatResponse, LeadInput, sendQuestion, submitContact, submitLead } from "./api";
 
 type Message = { role: "assistant" | "user"; text: string; result?: ChatResponse };
 
@@ -55,6 +55,12 @@ export function App() {
     await askQuestion(value);
   }
 
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   async function askQuestion(
     value: string,
     forceEscalation = false,
@@ -65,7 +71,10 @@ export function App() {
     setMessages((current) => [...current, { role: "user", text: displayText }]);
     setPending(true);
     try {
-      const result = await sendQuestion(value, conversationId, forceEscalation, context);
+      const history: ChatHistoryMessage[] = messages
+        .slice(-8)
+        .map((message) => ({ role: message.role, content: message.text }));
+      const result = await sendQuestion(value, conversationId, forceEscalation, context, history);
       setConversationId(result.conversation_id);
       setMessages((current) => [...current, { role: "assistant", text: result.answer, result }]);
       const rememberedEmail = getSessionEmail();
@@ -152,13 +161,19 @@ export function App() {
   return (
     <main className="page-shell">
       <section className="intro">
-        <span className="eyebrow">Jain Heritage School</span>
+        <span className="eyebrow">Jain Heritage School · Electronic City</span>
         <h1>Discover a joyful way to learn.</h1>
         <p>Ask about academics, programmes, facilities, campus visits, transport, or admissions.</p>
       </section>
 
       <section className="chat-card" aria-label="JHS school information chat">
-        <header><div className="crest">JGI</div><div><strong>JHS School Assistant</strong><span>Answers from approved school information</span></div></header>
+        <header className="assistant-header">
+          <div className="brand-lockup brand-lockup--compact">
+            <div className="brand-monogram" aria-hidden="true"><span>JHS</span></div>
+            <div className="brand-copy"><strong>Jain Heritage School</strong><span>Electronic City</span></div>
+          </div>
+          <div className="assistant-identity"><strong>School Assistant</strong><span>Verified school information</span></div>
+        </header>
         <div className="messages" aria-live="polite">
           {messages.map((message, index) => (
             <article className={`message ${message.role}`} key={`${message.role}-${index}`}>
@@ -265,7 +280,16 @@ export function App() {
         )}
 
         <form className="composer" onSubmit={ask}>
-          <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask an admissions question…" aria-label="Your question" />
+          <textarea
+            rows={1}
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Ask about Jain Heritage School…"
+            aria-label="Your question"
+            aria-keyshortcuts="Enter Meta+Enter Control+Enter Shift+Enter"
+            title="Press Enter to send. Press Cmd+Enter, Ctrl+Enter, or Shift+Enter for a new line."
+          />
           <button disabled={pending}>Ask</button>
         </form>
       </section>

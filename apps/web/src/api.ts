@@ -19,6 +19,11 @@ export type ChatResponse = {
   required_details: string[];
 };
 
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export async function sendQuestion(
@@ -26,6 +31,7 @@ export async function sendQuestion(
   conversationId?: string,
   forceEscalation = false,
   context: Record<string, string> = {},
+  history: ChatHistoryMessage[] = [],
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_URL}/v1/chat`, {
     method: "POST",
@@ -36,6 +42,7 @@ export async function sendQuestion(
       conversation_id: conversationId,
       force_escalation: forceEscalation,
       context,
+      history,
     }),
   });
   if (!response.ok) throw new Error("The assistant is temporarily unavailable.");
