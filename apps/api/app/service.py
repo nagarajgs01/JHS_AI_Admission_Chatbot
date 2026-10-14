@@ -16,6 +16,7 @@ from .models import (
 )
 from .retrieval import InMemoryKnowledgeRepository
 from .retrieval_policy import (
+    evaluate_evidence,
     expand_query,
     has_likely_typo,
     meaningful_keyword_score,
@@ -303,7 +304,16 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     if not hits:
         return None
     top = hits[0]
-    if not top.evidence_supported or top.score < max(minimum_score, 0.50):
+    if top.score < max(minimum_score, 0.50):
+        return None
+    content = top.entry.content.strip()
+    decision = evaluate_evidence(
+        question,
+        content,
+        top.score,
+        minimum_score,
+    )
+    if not decision.supported:
         return None
     searchable_text = f"{top.entry.title} {top.entry.content}"
     if meaningful_keyword_score(question, searchable_text) < 0.60:
@@ -317,7 +327,6 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
         title_coverage = meaningful_keyword_score(question, top.entry.title)
         if title_coverage < 0.50:
             return None
-    content = top.entry.content.strip()
     if not content or len(content) > 700:
         return None
     return content
