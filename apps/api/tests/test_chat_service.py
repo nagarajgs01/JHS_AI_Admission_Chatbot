@@ -25,7 +25,7 @@ from app.service import (
     is_conversation_followup,
     social_response,
 )
-from app.retrieval_policy import has_likely_typo
+from app.retrieval_policy import correct_query_typos, expand_query, has_likely_typo
 
 
 class HallucinatingModel:
@@ -91,6 +91,31 @@ def test_normal_word_forms_do_not_trigger_typo_understanding_path():
     assert not has_likely_typo("What boards are offered?")
     assert not has_likely_typo("Which classes use school buses?")
     assert has_likely_typo("What syllabuss do you offer?")
+
+
+@pytest.mark.parametrize(
+    ("question", "corrected"),
+    [
+        ("What syllabuss do you offer?", "What syllabus do you offer?"),
+        ("Do u provide transpotation?", "Do you provide transportation?"),
+        ("Hw can I aply?", "How can I apply?"),
+        ("Who is the chairmn?", "Who is the chairman?"),
+        ("Do you hav swiming facilites?", "Do you have swimming facilities?"),
+    ],
+)
+def test_confident_domain_typos_are_corrected_before_expansion(question, corrected):
+    assert correct_query_typos(question) == corrected
+
+
+def test_corrected_terms_receive_domain_expansion():
+    transport_query = expand_query("Do u provide transpotation?")
+    assert transport_query.startswith("Do you provide transportation?")
+    assert "bus" in transport_query
+    assert "route" in transport_query
+
+    application_query = expand_query("Hw can I aply?")
+    assert application_query.startswith("How can I apply?")
+    assert "admission process" in application_query
 
 
 def test_structured_detail_values_are_detected_in_the_question():

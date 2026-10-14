@@ -24,6 +24,9 @@ DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "email": ("contact", "email address", "info@jhselectroniccity.com"),
     "study": ("academics", "grades", "curriculum", "board", "CBSE", "ICSE"),
     "transport": ("bus", "route", "pickup", "drop-off"),
+    "transportation": ("transport", "bus", "route", "pickup", "drop-off"),
+    "syllabus": ("curriculum", "board", "CBSE", "ICSE"),
+    "curriculum": ("syllabus", "board", "CBSE", "ICSE"),
 }
 
 DOMAIN_VOCABULARY = {
@@ -32,6 +35,14 @@ DOMAIN_VOCABULARY = {
     "follow", "food", "grade", "icse", "library", "location", "meal", "montessori",
     "music", "option", "play", "playing", "school", "sports", "study", "syllabus", "swimming",
     "transport", "transportation", "bus", "buses", "route", "yoga",
+    "apply", "chairman", "facility", "facilities",
+}
+
+COMMON_CHAT_NORMALIZATIONS = {
+    "u": "you",
+    "ur": "your",
+    "hw": "how",
+    "hav": "have",
 }
 
 
@@ -88,8 +99,53 @@ def normalized_phrases(text: str) -> set[str]:
     return phrases
 
 
+def correct_query_typos(query: str) -> str:
+    """Correct confident domain misspellings before semantic expansion."""
+
+    corrected_query = query
+    for shorthand, replacement in COMMON_CHAT_NORMALIZATIONS.items():
+        def replace_shorthand(match, value=replacement) -> str:
+            original = match.group(0)
+            return value.capitalize() if original[:1].isupper() else value
+
+        corrected_query = re.sub(
+            rf"\b{re.escape(shorthand)}\b",
+            replace_shorthand,
+            corrected_query,
+            flags=re.IGNORECASE,
+        )
+
+    def replace(match) -> str:
+        original = match.group(0)
+        raw_token = original.lower()
+
+        def preserve_case(value: str) -> str:
+            if original.isupper():
+                return value.upper()
+            if original[:1].isupper():
+                return value.capitalize()
+            return value
+
+        if raw_token in COMMON_CHAT_NORMALIZATIONS:
+            return preserve_case(COMMON_CHAT_NORMALIZATIONS[raw_token])
+        if raw_token in STOP_WORDS or raw_token in DOMAIN_VOCABULARY:
+            return original
+        if len(raw_token) < 4:
+            return original
+        closest = max(
+            DOMAIN_VOCABULARY,
+            key=lambda candidate: SequenceMatcher(None, raw_token, candidate).ratio(),
+        )
+        if SequenceMatcher(None, raw_token, closest).ratio() >= 0.80:
+            return preserve_case(closest)
+        return original
+
+    return TOKEN_RE.sub(replace, corrected_query)
+
+
 def expand_query(query: str) -> str:
-    terms = normalized_phrases(query)
+    corrected_query = correct_query_typos(query)
+    terms = normalized_phrases(corrected_query)
     additions: list[str] = []
     for trigger, synonyms in DOMAIN_SYNONYMS.items():
         if trigger == "campus" and "visit" in terms:
@@ -121,7 +177,7 @@ def expand_query(query: str) -> str:
         additions.extend(("campus visit", "booked in advance", "contact", "appointment"))
     if "enquiry" in terms and {"detail", "details", "information", "needed"} & terms:
         additions.extend(("child name", "date of birth", "grade", "contact number"))
-    for raw_token in TOKEN_RE.findall(query.lower()):
+    for raw_token in TOKEN_RE.findall(corrected_query.lower()):
         if len(raw_token) < 4:
             continue
         closest = max(
@@ -134,8 +190,8 @@ def expand_query(query: str) -> str:
         ):
             additions.append(closest)
     if not additions:
-        return query
-    return f"{query} Related search terms: {' '.join(dict.fromkeys(additions))}"
+        return corrected_query
+    return f"{corrected_query} Related search terms: {' '.join(dict.fromkeys(additions))}"
 
 
 def synonym_evidence_score(query: str, passage: str) -> float:
@@ -242,6 +298,7 @@ def typo_tolerant_query_tokens(query: str) -> set[str]:
 
     terms: set[str] = set()
     for raw_token in TOKEN_RE.findall(query.lower()):
+        raw_token = COMMON_CHAT_NORMALIZATIONS.get(raw_token, raw_token)
         if raw_token in STOP_WORDS:
             continue
         if len(raw_token) >= 4 and any(

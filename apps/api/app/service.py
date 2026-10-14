@@ -20,6 +20,7 @@ from .retrieval_policy import (
     expand_query,
     has_likely_typo,
     meaningful_keyword_score,
+    synonym_evidence_score,
     typo_tolerant_query_tokens,
 )
 
@@ -316,15 +317,21 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
 def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
     """Return whether deterministic retrieval already resolved the question."""
 
-    if not hits or hits[0].score < max(minimum_score, 0.50):
+    if not hits or hits[0].score < minimum_score:
         return False
     top = hits[0]
-    return evaluate_evidence(
+    decision = evaluate_evidence(
         question,
         top.entry.content,
         top.score,
         minimum_score,
-    ).supported
+    )
+    if not decision.supported:
+        return False
+    searchable_text = f"{top.entry.title} {top.entry.content}"
+    lexical_coverage = meaningful_keyword_score(question, searchable_text)
+    synonym_match = synonym_evidence_score(question, searchable_text)
+    return top.score >= 0.50 or lexical_coverage >= 0.75 or synonym_match == 1.0
 
 
 def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
@@ -341,7 +348,7 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     if not hits:
         return None
     top = hits[0]
-    if top.score < max(minimum_score, 0.50):
+    if top.score < minimum_score:
         return None
     content = top.entry.content.strip()
     decision = evaluate_evidence(
@@ -354,14 +361,18 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
         return None
     searchable_text = f"{top.entry.title} {top.entry.content}"
     lexical_coverage = meaningful_keyword_score(question, searchable_text)
+    synonym_match = synonym_evidence_score(question, searchable_text)
     # A high hybrid score already includes semantic, keyword and domain-synonym
     # evidence. Require exact/fuzzy lexical coverage only for borderline matches;
     # otherwise normal word forms such as transportation/transport and
     # offered/offers would trigger an unnecessary language-model round trip.
-    deterministic_typo_match = has_likely_typo(question) and top.score >= 0.50
+    deterministic_typo_match = has_likely_typo(question) and (
+        top.score >= 0.50 or lexical_coverage >= 0.75 or synonym_match == 1.0
+    )
     if (
         top.score < 0.55
         and lexical_coverage < 0.60
+        and synonym_match < 1.0
         and not deterministic_typo_match
     ):
         return None
