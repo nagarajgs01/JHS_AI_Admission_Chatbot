@@ -268,6 +268,23 @@ def has_likely_typo(query: str) -> bool:
     for raw_token in TOKEN_RE.findall(query.lower()):
         if len(raw_token) < 4 or raw_token in STOP_WORDS:
             continue
+        # Ordinary plural forms are not spelling mistakes. Keep typo correction
+        # available for genuine misspellings while avoiding an expensive LLM
+        # understanding call for words such as boards, fees, classes and buses.
+        singular_candidates = set()
+        if raw_token.endswith("s") and len(raw_token) > 4:
+            simple_s_base = raw_token[:-1]
+            # A known word that already ends in "s" (for example syllabus)
+            # does not form its plural by adding only another "s". This keeps
+            # "syllabuss" classified as a typo while accepting board→boards.
+            if not simple_s_base.endswith("s"):
+                singular_candidates.add(simple_s_base)
+        if raw_token.endswith("es") and len(raw_token) > 5:
+            singular_candidates.add(raw_token[:-2])
+        if raw_token.endswith("ies") and len(raw_token) > 5:
+            singular_candidates.add(f"{raw_token[:-3]}y")
+        if singular_candidates & DOMAIN_VOCABULARY:
+            continue
         # Known grammatical forms such as options→option, fees→fee and
         # transportation→transport are normalization, not spelling mistakes.
         normalized_token = normalize_token(raw_token)

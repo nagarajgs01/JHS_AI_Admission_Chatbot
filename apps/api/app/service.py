@@ -547,7 +547,9 @@ class ChatService:
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
         hits = [] if followup else self.knowledge.search(request.school_id, contextual_question)
-        if hits and not needs_contextual_understanding(contextual_question):
+        if not needs_contextual_understanding(contextual_question) and (
+            hits or is_clear_missing_information(contextual_question)
+        ):
             understanding = QueryUnderstanding(
                 normalized_question=contextual_question,
                 scope="school",

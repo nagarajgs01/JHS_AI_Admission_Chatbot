@@ -87,6 +87,9 @@ class RedundantMissingGradeModel(EvidenceOnlyModel):
 def test_normal_word_forms_do_not_trigger_typo_understanding_path():
     assert not has_likely_typo("What are the transportation options?")
     assert not has_likely_typo("What fees apply to different grades?")
+    assert not has_likely_typo("What boards are offered?")
+    assert not has_likely_typo("Which classes use school buses?")
+    assert has_likely_typo("What syllabuss do you offer?")
 
 
 def test_structured_detail_values_are_detected_in_the_question():
@@ -117,6 +120,27 @@ async def test_model_cannot_request_a_grade_already_present_in_question():
     assert response.outcome == "escalated"
     assert response.required_details == []
     assert response.unanswered_id is not None
+
+
+@pytest.mark.asyncio
+async def test_clear_dynamic_question_skips_llm_understanding_before_escalation():
+    model = CountingEvidenceModel()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        UnansweredRepository(),
+        model,
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the current Grade 5 class teacher?",
+        )
+    )
+
+    assert response.outcome == "escalated"
+    assert model.understanding_calls == 0
 
 
 @pytest.mark.parametrize(
