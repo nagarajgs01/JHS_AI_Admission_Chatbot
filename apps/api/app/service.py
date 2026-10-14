@@ -296,9 +296,10 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
 
     This path performs no language-model generation, so it cannot invent a fact.
     It is intentionally conservative: the retrieval policy must approve the hit,
-    the hybrid score and lexical coverage must both be strong, and a close competing
-    passage requires explicit title/topic alignment. Ambiguous or synthesis-heavy
-    questions keep using normal grounded generation and independent verification.
+    and the hybrid score and question-to-evidence lexical coverage must both be
+    strong. Titles are metadata and never override evidence contained in the
+    approved passage. Ambiguous or synthesis-heavy questions keep using normal
+    grounded generation and independent verification.
     """
 
     if not hits:
@@ -318,15 +319,6 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     searchable_text = f"{top.entry.title} {top.entry.content}"
     if meaningful_keyword_score(question, searchable_text) < 0.60:
         return None
-    if len(hits) > 1 and top.score - hits[1].score < 0.06:
-        # Close aggregate scores are not ambiguous when the leading entry's
-        # reviewed topic/title itself matches the question.  This distinguishes,
-        # for example, a school-identity entry from a nearby passage that merely
-        # contains the word "name" in a different context.  If the title is not
-        # aligned, remain conservative and use the generated/verified path.
-        title_coverage = meaningful_keyword_score(question, top.entry.title)
-        if title_coverage < 0.50:
-            return None
     if not content or len(content) > 700:
         return None
     return content

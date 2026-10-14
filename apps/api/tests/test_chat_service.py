@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -18,6 +19,7 @@ from app.service import (
     UnansweredRepository,
     contextualize_with_history,
     escalation_question,
+    extractive_fast_answer,
     is_conversation_followup,
     social_response,
 )
@@ -308,6 +310,36 @@ async def test_strong_direct_evidence_bypasses_generation_safely():
     assert response.unanswered_id is None
     assert model.answer_calls == 0
     assert model.verify_calls == 0
+
+
+def test_close_runner_up_does_not_override_strong_approved_evidence():
+    identity = KnowledgeEntry(
+        school_id="school-a",
+        title="School identity",
+        content=(
+            "The official name is Jain Heritage School Electronic City, also "
+            "referred to as JHS Electronic City."
+        ),
+        source_label="Approved school website",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["school", "identity"],
+    )
+    nearby = KnowledgeEntry(
+        school_id="school-a",
+        title="Admission enquiry information",
+        content="Families provide the child's name when making an admission enquiry.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["admissions", "enquiry"],
+    )
+    hits = [
+        SimpleNamespace(entry=identity, score=0.5385),
+        SimpleNamespace(entry=nearby, score=0.4854),
+    ]
+
+    answer = extractive_fast_answer("What is the school name?", hits, 0.38)
+
+    assert answer == identity.content
 
 
 @pytest.mark.asyncio
