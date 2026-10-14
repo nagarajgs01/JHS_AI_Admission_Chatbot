@@ -18,6 +18,7 @@ from app.service import (
     ESCALATION_MESSAGE,
     UnansweredRepository,
     contextualize_with_history,
+    detail_is_already_supplied,
     escalation_question,
     extractive_fast_answer,
     is_conversation_followup,
@@ -70,9 +71,52 @@ class FollowupEvidenceModel(EvidenceOnlyModel):
         )
 
 
+class RedundantMissingGradeModel(EvidenceOnlyModel):
+    async def understand(self, question):
+        del question
+        return QueryUnderstanding(
+            normalized_question="Who is the current Grade 5 class teacher?",
+            scope="school",
+            clarity="needs_details",
+            intent="staff_information",
+            requested_facts=["teacher"],
+            missing_details=["grade"],
+        )
+
+
 def test_normal_word_forms_do_not_trigger_typo_understanding_path():
     assert not has_likely_typo("What are the transportation options?")
     assert not has_likely_typo("What fees apply to different grades?")
+
+
+def test_structured_detail_values_are_detected_in_the_question():
+    assert detail_is_already_supplied(
+        "Who is the current Grade 5 class teacher?", "grade"
+    )
+    assert detail_is_already_supplied("Is Nursery available?", "grade")
+    assert not detail_is_already_supplied("Which grades are available?", "grade")
+
+
+@pytest.mark.asyncio
+async def test_model_cannot_request_a_grade_already_present_in_question():
+    unanswered = UnansweredRepository()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        unanswered,
+        RedundantMissingGradeModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the current Grade 5 class teacher?",
+        )
+    )
+
+    assert response.outcome == "escalated"
+    assert response.required_details == []
+    assert response.unanswered_id is not None
 
 
 @pytest.mark.parametrize(
@@ -340,6 +384,39 @@ def test_close_runner_up_does_not_override_strong_approved_evidence():
     answer = extractive_fast_answer("What is the school name?", hits, 0.38)
 
     assert answer == identity.content
+
+
+@pytest.mark.parametrize(
+    ("question", "title", "content", "score"),
+    [
+        (
+            "Do you provide bus transportation?",
+            "Transport and extended day care",
+            "The school states that school transport with pick-up and drop is available.",
+            0.6405,
+        ),
+        (
+            "What boards are offered?",
+            "Boards offered",
+            "The Electronic City campus offers both CBSE and ICSE.",
+            0.7365,
+        ),
+    ],
+)
+def test_strong_hybrid_match_handles_equivalent_word_forms(
+    question, title, content, score
+):
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title=title,
+        content=content,
+        source_label="Approved school website",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=[],
+    )
+    hits = [SimpleNamespace(entry=entry, score=score)]
+
+    assert extractive_fast_answer(question, hits, 0.38) == content
 
 
 @pytest.mark.asyncio

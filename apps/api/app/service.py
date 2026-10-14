@@ -291,6 +291,28 @@ def needs_contextual_understanding(question: str) -> bool:
     return has_likely_typo(question) or any(marker in lowered for marker in personal_markers)
 
 
+def detail_is_already_supplied(question: str, detail: str) -> bool:
+    """Reject model-requested details whose value is already in the question."""
+
+    normalized_detail = re.sub(r"[^a-z0-9]+", "_", detail.lower()).strip("_")
+    lowered = " ".join(question.lower().split())
+    if normalized_detail in {"grade", "class", "grade_or_class"}:
+        return bool(
+            re.search(
+                r"\b(?:(?:grade|class)\s*(?:-|:)?\s*\d{1,2}|play\s*group|"
+                r"playgroup|nursery|lkg|ukg)\b",
+                lowered,
+            )
+        )
+    if normalized_detail in {"email", "email_address"}:
+        return bool(re.search(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", question))
+    if normalized_detail in {"phone", "mobile", "mobile_number", "contact_number"}:
+        return bool(re.search(r"(?:\+?\d[\d\s()-]{7,}\d)", question))
+    if normalized_detail in {"academic_year", "admission_year", "year"}:
+        return bool(re.search(r"\b20\d{2}(?:\s*[-/]\s*\d{2,4})?\b", question))
+    return False
+
+
 def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
     """Return approved source text only when the match is exceptionally direct.
 
@@ -317,7 +339,12 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     if not decision.supported:
         return None
     searchable_text = f"{top.entry.title} {top.entry.content}"
-    if meaningful_keyword_score(question, searchable_text) < 0.60:
+    lexical_coverage = meaningful_keyword_score(question, searchable_text)
+    # A high hybrid score already includes semantic, keyword and domain-synonym
+    # evidence. Require exact/fuzzy lexical coverage only for borderline matches;
+    # otherwise normal word forms such as transportation/transport and
+    # offered/offers would trigger an unnecessary language-model round trip.
+    if top.score < 0.55 and lexical_coverage < 0.60:
         return None
     if not content or len(content) > 700:
         return None
@@ -539,7 +566,9 @@ class ChatService:
         missing_details = [
             detail
             for detail in understanding.missing_details
-            if detail and not request.context.get(detail, "").strip()
+            if detail
+            and not request.context.get(detail, "").strip()
+            and not detail_is_already_supplied(request.message, detail)
         ]
         if missing_details:
             return ChatResponse(
