@@ -313,6 +313,20 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
     return False
 
 
+def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
+    """Return whether deterministic retrieval already resolved the question."""
+
+    if not hits or hits[0].score < max(minimum_score, 0.50):
+        return False
+    top = hits[0]
+    return evaluate_evidence(
+        question,
+        top.entry.content,
+        top.score,
+        minimum_score,
+    ).supported
+
+
 def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
     """Return approved source text only when the match is exceptionally direct.
 
@@ -344,7 +358,12 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     # evidence. Require exact/fuzzy lexical coverage only for borderline matches;
     # otherwise normal word forms such as transportation/transport and
     # offered/offers would trigger an unnecessary language-model round trip.
-    if top.score < 0.55 and lexical_coverage < 0.60:
+    deterministic_typo_match = has_likely_typo(question) and top.score >= 0.50
+    if (
+        top.score < 0.55
+        and lexical_coverage < 0.60
+        and not deterministic_typo_match
+    ):
         return None
     if not content or len(content) > 700:
         return None
@@ -547,8 +566,17 @@ class ChatService:
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
         hits = [] if followup else self.knowledge.search(request.school_id, contextual_question)
-        if not needs_contextual_understanding(contextual_question) and (
-            hits or is_clear_missing_information(contextual_question)
+        deterministic_typo_match = (
+            has_likely_typo(contextual_question)
+            and has_strong_approved_hit(
+                contextual_question,
+                hits,
+                self.min_score,
+            )
+        )
+        if deterministic_typo_match or (
+            not needs_contextual_understanding(contextual_question)
+            and (hits or is_clear_missing_information(contextual_question))
         ):
             understanding = QueryUnderstanding(
                 normalized_question=contextual_question,

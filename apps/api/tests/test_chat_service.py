@@ -21,6 +21,7 @@ from app.service import (
     detail_is_already_supplied,
     escalation_question,
     extractive_fast_answer,
+    has_strong_approved_hit,
     is_conversation_followup,
     social_response,
 )
@@ -441,6 +442,22 @@ def test_strong_hybrid_match_handles_equivalent_word_forms(
     hits = [SimpleNamespace(entry=entry, score=score)]
 
     assert extractive_fast_answer(question, hits, 0.38) == content
+
+
+def test_policy_approved_typo_match_skips_language_model_route():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="The Electronic City campus offers both CBSE and ICSE.",
+        source_label="Approved school website",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["board", "curriculum"],
+    )
+    hits = [SimpleNamespace(entry=entry, score=0.5364)]
+    question = "What syllabuss do you offer?"
+
+    assert has_strong_approved_hit(question, hits, 0.38)
+    assert extractive_fast_answer(question, hits, 0.38) == entry.content
 
 
 @pytest.mark.asyncio
