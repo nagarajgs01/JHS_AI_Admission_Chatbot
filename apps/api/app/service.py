@@ -15,7 +15,12 @@ from .models import (
     UnansweredQuestion,
 )
 from .retrieval import InMemoryKnowledgeRepository
-from .retrieval_policy import expand_query, has_likely_typo, typo_tolerant_query_tokens
+from .retrieval_policy import (
+    expand_query,
+    has_likely_typo,
+    meaningful_keyword_score,
+    typo_tolerant_query_tokens,
+)
 
 
 ESCALATION_MESSAGE = (
@@ -283,6 +288,32 @@ def needs_contextual_understanding(question: str) -> bool:
         " my application ",
     )
     return has_likely_typo(question) or any(marker in lowered for marker in personal_markers)
+
+
+def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
+    """Return approved source text only when the match is exceptionally direct.
+
+    This path performs no language-model generation, so it cannot invent a fact.
+    It is intentionally conservative: the retrieval policy must approve the hit,
+    the hybrid score and lexical coverage must both be strong, and a competing
+    passage must not be nearly tied.  Ambiguous or synthesis-heavy questions keep
+    using normal grounded generation and independent verification.
+    """
+
+    if not hits:
+        return None
+    top = hits[0]
+    if not top.evidence_supported or top.score < max(minimum_score, 0.50):
+        return None
+    searchable_text = f"{top.entry.title} {top.entry.content}"
+    if meaningful_keyword_score(question, searchable_text) < 0.60:
+        return None
+    if len(hits) > 1 and top.score - hits[1].score < 0.06:
+        return None
+    content = top.entry.content.strip()
+    if not content or len(content) > 700:
+        return None
+    return content
 
 CALLBACK_SUGGESTION = (
     "Thank you for your enquiry. The school team is verifying the requested information "
@@ -571,6 +602,33 @@ class ChatService:
             if hit.score >= self.min_score or hit.evidence_supported
         ]
         answer_question = understanding.normalized_question if followup else contextual_question
+
+        # Strong single-source matches are safest and fastest when returned
+        # extractively.  The text is already published school knowledge, so this
+        # path avoids both hallucination and two expensive local-model round trips.
+        extractive_answer = extractive_fast_answer(
+            answer_question,
+            approved_hits,
+            self.min_score,
+        )
+        if extractive_answer:
+            hit = approved_hits[0]
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=extractive_answer,
+                outcome="answered",
+                confidence=hit.score,
+                citations=[
+                    Citation(
+                        knowledge_id=hit.entry.id,
+                        title=hit.entry.title,
+                        source_label=hit.entry.source_label,
+                        excerpt=hit.entry.content[:240],
+                        score=hit.score,
+                    )
+                ],
+            )
+
         answer = await self.model.answer(answer_question, approved_hits)
         if answer == "INSUFFICIENT_EVIDENCE":
             unanswered = self.unanswered.create(request.school_id, ticket_question)

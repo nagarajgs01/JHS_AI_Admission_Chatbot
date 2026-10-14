@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -164,6 +165,18 @@ def parse_json_object(content: str) -> dict[str, Any]:
     return payload
 
 
+def parse_support_verdict(content: str) -> bool:
+    """Read a constrained grounding verdict without requiring exact punctuation.
+
+    Small local models sometimes return ``SUPPORTED.`` or ``Verdict: SUPPORTED``
+    even when instructed to emit one token.  Treat the first explicit verdict as
+    authoritative while remaining fail-closed for empty or malformed output.
+    """
+
+    match = re.search(r"\b(UNSUPPORTED|SUPPORTED)\b", content.strip().upper())
+    return bool(match and match.group(1) == "SUPPORTED")
+
+
 class EvidenceOnlyModel:
     """Deterministic test adapter; it makes no network or model call."""
 
@@ -263,10 +276,10 @@ class OllamaModel(LocalHTTPModel):
             "stream": False,
             "think": False,
             "keep_alive": "2h",
-            "options": {"temperature": 0, "num_predict": 8},
+            "options": {"temperature": 0, "num_predict": 16},
         }
         response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
-        return response["message"]["content"].strip().upper() == "SUPPORTED"
+        return parse_support_verdict(response["message"]["content"])
 
     async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
         payload = {
@@ -324,8 +337,7 @@ class VLLMModel(LocalHTTPModel):
             "max_tokens": 8,
         }
         response = await asyncio.to_thread(self._post_json, "/v1/chat/completions", payload)
-        result = response["choices"][0]["message"]["content"].strip().upper()
-        return result == "SUPPORTED"
+        return parse_support_verdict(response["choices"][0]["message"]["content"])
 
     async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
         payload = {
