@@ -20,6 +20,7 @@ from app.service import (
     contextualize_with_history,
     detail_is_already_supplied,
     escalation_question,
+    expanded_keyword_score,
     extractive_fast_answer,
     has_strong_approved_hit,
     is_conversation_followup,
@@ -486,24 +487,26 @@ def test_policy_approved_typo_match_skips_language_model_route():
     assert extractive_fast_answer(question, hits, 0.38) == entry.content
 
 
-def test_high_semantic_typo_match_skips_language_model_route():
+def test_expanded_query_match_skips_language_model_route():
     entry = KnowledgeEntry(
         school_id="school-a",
         title="Admission process",
-        content="The admission process starts with an enquiry and campus visit.",
+        content=(
+            "The admission process starts with an enquiry and campus visit, "
+            "followed by an application and enrolment."
+        ),
         source_label="Approved admissions page",
         status=KnowledgeStatus.PUBLISHED,
         tags=["admission", "application"],
     )
     hits = [
-        SimpleNamespace(
-            entry=entry,
-            score=0.4519,
-            semantic_score=0.6953,
-        )
+        SimpleNamespace(entry=entry, score=0.4519)
     ]
     question = "Hw can I aply?"
 
+    assert expanded_keyword_score(
+        question, f"{entry.title} {entry.content}"
+    ) >= 0.60
     assert has_strong_approved_hit(question, hits, 0.38)
     assert extractive_fast_answer(question, hits, 0.38) == entry.content
 
@@ -538,6 +541,33 @@ def test_broad_syllabus_question_prefers_complete_board_overview():
     assert prioritize_complete_overview(
         "Explain the ICSE syllabus", hits, 0.38
     )[0].entry.title == "ICSE pathway"
+
+
+def test_explicit_cbse_question_prefers_cbse_pathway():
+    overview = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="The school offers both CBSE and ICSE pathways.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["board", "cbse", "icse"],
+    )
+    cbse = KnowledgeEntry(
+        school_id="school-a",
+        title="CBSE pathway",
+        content="The CBSE pathway is NCERT-aligned and follows the NEP framework.",
+        source_label="Approved CBSE page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["cbse", "ncert"],
+    )
+    hits = [
+        SimpleNamespace(entry=overview, score=0.7118),
+        SimpleNamespace(entry=cbse, score=0.6000),
+    ]
+
+    ranked = prioritize_complete_overview("Explain the CBSE syllabus", hits, 0.38)
+
+    assert ranked[0].entry.title == "CBSE pathway"
 
 
 @pytest.mark.asyncio

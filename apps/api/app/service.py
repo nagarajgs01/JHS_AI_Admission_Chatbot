@@ -314,6 +314,23 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
     return False
 
 
+def expanded_keyword_score(question: str, searchable_text: str) -> float:
+    """Score original terms and controlled expansion terms without label noise."""
+
+    original_score = meaningful_keyword_score(question, searchable_text)
+    expanded = expand_query(question)
+    marker = "Related search terms:"
+    if marker not in expanded:
+        return original_score
+    expansion_terms = expanded.split(marker, 1)[1].strip()
+    if not expansion_terms:
+        return original_score
+    return max(
+        original_score,
+        meaningful_keyword_score(expansion_terms, searchable_text),
+    )
+
+
 def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
     """Return whether deterministic retrieval already resolved the question."""
 
@@ -329,13 +346,11 @@ def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
     if not decision.supported:
         return False
     searchable_text = f"{top.entry.title} {top.entry.content}"
-    lexical_coverage = meaningful_keyword_score(question, searchable_text)
+    lexical_coverage = expanded_keyword_score(question, searchable_text)
     synonym_match = synonym_evidence_score(question, searchable_text)
-    semantic_score = getattr(top, "semantic_score", 0.0)
     return (
         top.score >= 0.50
-        or semantic_score >= 0.55
-        or lexical_coverage >= 0.75
+        or lexical_coverage >= 0.60
         or synonym_match == 1.0
     )
 
@@ -348,7 +363,28 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
     terms = typo_tolerant_query_tokens(question)
     if not terms & {"board", "curriculum", "syllabus"}:
         return hits
-    if terms & {"cbse", "icse", "cisce", "ncert"}:
+    requested_pathway = next(
+        (pathway for pathway in ("cbse", "icse") if pathway in terms),
+        None,
+    )
+    if requested_pathway:
+        for index, hit in enumerate(hits):
+            if requested_pathway not in hit.entry.title.lower():
+                continue
+            if hit.score < minimum_score:
+                continue
+            decision = evaluate_evidence(
+                question,
+                hit.entry.content,
+                hit.score,
+                minimum_score,
+            )
+            if decision.supported and index:
+                return [hit, *hits[:index], *hits[index + 1:]]
+            if decision.supported:
+                return hits
+        return hits
+    if terms & {"cisce", "ncert"}:
         return hits
 
     for index, hit in enumerate(hits):
@@ -400,17 +436,15 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     if not decision.supported:
         return None
     searchable_text = f"{top.entry.title} {top.entry.content}"
-    lexical_coverage = meaningful_keyword_score(question, searchable_text)
+    lexical_coverage = expanded_keyword_score(question, searchable_text)
     synonym_match = synonym_evidence_score(question, searchable_text)
-    semantic_score = getattr(top, "semantic_score", 0.0)
     # A high hybrid score already includes semantic, keyword and domain-synonym
     # evidence. Require exact/fuzzy lexical coverage only for borderline matches;
     # otherwise normal word forms such as transportation/transport and
     # offered/offers would trigger an unnecessary language-model round trip.
     deterministic_typo_match = has_likely_typo(question) and (
         top.score >= 0.50
-        or semantic_score >= 0.55
-        or lexical_coverage >= 0.75
+        or lexical_coverage >= 0.60
         or synonym_match == 1.0
     )
     if (
