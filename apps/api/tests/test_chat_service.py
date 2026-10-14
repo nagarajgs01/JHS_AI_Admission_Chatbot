@@ -23,6 +23,7 @@ from app.service import (
     extractive_fast_answer,
     has_strong_approved_hit,
     is_conversation_followup,
+    prioritize_complete_overview,
     social_response,
 )
 from app.retrieval_policy import correct_query_typos, expand_query, has_likely_typo
@@ -483,6 +484,60 @@ def test_policy_approved_typo_match_skips_language_model_route():
 
     assert has_strong_approved_hit(question, hits, 0.38)
     assert extractive_fast_answer(question, hits, 0.38) == entry.content
+
+
+def test_high_semantic_typo_match_skips_language_model_route():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Admission process",
+        content="The admission process starts with an enquiry and campus visit.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["admission", "application"],
+    )
+    hits = [
+        SimpleNamespace(
+            entry=entry,
+            score=0.4519,
+            semantic_score=0.6953,
+        )
+    ]
+    question = "Hw can I aply?"
+
+    assert has_strong_approved_hit(question, hits, 0.38)
+    assert extractive_fast_answer(question, hits, 0.38) == entry.content
+
+
+def test_broad_syllabus_question_prefers_complete_board_overview():
+    icse = KnowledgeEntry(
+        school_id="school-a",
+        title="ICSE pathway",
+        content="The ICSE pathway follows the CISCE curriculum.",
+        source_label="Approved ICSE page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["icse", "curriculum"],
+    )
+    overview = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="The school offers both CBSE and ICSE pathways.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["board", "cbse", "icse"],
+    )
+    hits = [
+        SimpleNamespace(entry=icse, score=0.7065),
+        SimpleNamespace(entry=overview, score=0.5558),
+    ]
+
+    ranked = prioritize_complete_overview(
+        "What syllabus does the school follow?", hits, 0.38
+    )
+
+    assert ranked[0].entry.title == "Boards offered"
+    assert prioritize_complete_overview(
+        "Explain the ICSE syllabus", hits, 0.38
+    )[0].entry.title == "ICSE pathway"
 
 
 @pytest.mark.asyncio

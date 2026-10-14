@@ -331,7 +331,47 @@ def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
     searchable_text = f"{top.entry.title} {top.entry.content}"
     lexical_coverage = meaningful_keyword_score(question, searchable_text)
     synonym_match = synonym_evidence_score(question, searchable_text)
-    return top.score >= 0.50 or lexical_coverage >= 0.75 or synonym_match == 1.0
+    semantic_score = getattr(top, "semantic_score", 0.0)
+    return (
+        top.score >= 0.50
+        or semantic_score >= 0.55
+        or lexical_coverage >= 0.75
+        or synonym_match == 1.0
+    )
+
+
+def prioritize_complete_overview(question: str, hits, minimum_score: float):
+    """Prefer a complete board overview for broad curriculum questions."""
+
+    if not hits:
+        return hits
+    terms = typo_tolerant_query_tokens(question)
+    if not terms & {"board", "curriculum", "syllabus"}:
+        return hits
+    if terms & {"cbse", "icse", "cisce", "ncert"}:
+        return hits
+
+    for index, hit in enumerate(hits):
+        title = hit.entry.title.lower()
+        content = hit.entry.content.lower()
+        is_board_overview = (
+            "board" in title
+            and "cbse" in content
+            and "icse" in content
+        )
+        if not is_board_overview or hit.score < minimum_score:
+            continue
+        decision = evaluate_evidence(
+            question,
+            hit.entry.content,
+            hit.score,
+            minimum_score,
+        )
+        if decision.supported and index:
+            return [hit, *hits[:index], *hits[index + 1:]]
+        if decision.supported:
+            return hits
+    return hits
 
 
 def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
@@ -362,12 +402,16 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
     searchable_text = f"{top.entry.title} {top.entry.content}"
     lexical_coverage = meaningful_keyword_score(question, searchable_text)
     synonym_match = synonym_evidence_score(question, searchable_text)
+    semantic_score = getattr(top, "semantic_score", 0.0)
     # A high hybrid score already includes semantic, keyword and domain-synonym
     # evidence. Require exact/fuzzy lexical coverage only for borderline matches;
     # otherwise normal word forms such as transportation/transport and
     # offered/offers would trigger an unnecessary language-model round trip.
     deterministic_typo_match = has_likely_typo(question) and (
-        top.score >= 0.50 or lexical_coverage >= 0.75 or synonym_match == 1.0
+        top.score >= 0.50
+        or semantic_score >= 0.55
+        or lexical_coverage >= 0.75
+        or synonym_match == 1.0
     )
     if (
         top.score < 0.55
@@ -577,6 +621,11 @@ class ChatService:
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
         hits = [] if followup else self.knowledge.search(request.school_id, contextual_question)
+        hits = prioritize_complete_overview(
+            contextual_question,
+            hits,
+            self.min_score,
+        )
         deterministic_typo_match = (
             has_likely_typo(contextual_question)
             and has_strong_approved_hit(
@@ -629,6 +678,11 @@ class ChatService:
         retrieval_question = " ".join(dict.fromkeys(part for part in retrieval_parts if part))
         if retrieval_question != contextual_question or not hits:
             hits = self.knowledge.search(request.school_id, retrieval_question)
+            hits = prioritize_complete_overview(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
 
         if not hits or (
             hits[0].score < self.min_score and not hits[0].evidence_supported
