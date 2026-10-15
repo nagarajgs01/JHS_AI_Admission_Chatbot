@@ -1615,3 +1615,107 @@ def test_admission_start_prefers_complete_process_over_visit_contact_entry():
     ranked = prioritize_requested_fact(question, ranked, 0.38)
 
     assert ranked[0].entry.title == "Admission process"
+
+
+def test_office_days_followup_resolves_to_office_hours():
+    history = [
+        ChatHistoryMessage(role="user", content="What is the school time?"),
+        ChatHistoryMessage(role="assistant", content="Office hours are Monday to Saturday, 9:00 AM to 5:00 PM."),
+    ]
+
+    assert resolve_contextual_question("What days is it open?", history) == (
+        "On which days is the school office open, and what are its office hours?"
+    )
+
+
+def test_contact_requests_are_canonicalized_without_losing_requested_fields():
+    assert resolve_contextual_question("How to contact the school", []) == (
+        "What are the school's phone number and email contact details?"
+    )
+    assert resolve_contextual_question("I want to talk to a person", []) == (
+        "What are the school's phone number and email contact details?"
+    )
+    assert resolve_contextual_question("What to talk to the a person", []) == (
+        "What are the school's phone number and email contact details?"
+    )
+
+
+def test_contact_answer_returns_phone_and_email_instead_of_address_only():
+    content = (
+        "The school is located in Bengaluru, Karnataka. "
+        "The admissions phone number is +91 96630 21118 and the email address is "
+        "info@jhselectroniccity.com."
+    )
+
+    answer = concise_source_answer(
+        "Can you give me the school contact details?",
+        "What are the school's phone number and email contact details?",
+        content,
+    )
+
+    assert "+91 96630 21118" in answer
+    assert "info@jhselectroniccity.com" in answer
+    assert "located in" not in answer
+
+
+def test_office_days_answer_selects_the_open_days():
+    content = (
+        "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM. "
+        "Campus visits should be booked in advance."
+    )
+
+    assert concise_source_answer(
+        "What days is it open?",
+        "On which days is the school office open?",
+        content,
+    ) == "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM."
+
+
+@pytest.mark.asyncio
+async def test_general_arithmetic_is_out_of_scope_without_creating_ticket():
+    unanswered = UnansweredRepository()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        unanswered,
+        CountingEvidenceModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="What is 2+2?")
+    )
+
+    assert response.outcome == "out_of_scope"
+    assert response.unanswered_id is None
+    assert unanswered.items == {}
+    assert is_obviously_out_of_scope("Calculate 12 divided by 3")
+    assert not is_obviously_out_of_scope("Does the school offer Grades 1-7?")
+
+
+def test_visit_booking_method_followups_ask_how_instead_of_repeating_requirement():
+    history = [
+        ChatHistoryMessage(role="user", content="Can I visit the campus?"),
+        ChatHistoryMessage(role="assistant", content="Campus visits should be booked in advance."),
+    ]
+    expected = "How can I arrange a campus visit by submitting an enquiry or calling admissions?"
+
+    assert resolve_contextual_question("How to book it?", history) == expected
+    assert resolve_contextual_question("I got it, how to do so?", history) == expected
+    assert resolve_contextual_question("How to book an appointment for visit?", []) == expected
+
+
+def test_visit_booking_method_returns_approved_action_and_phone_number():
+    content = (
+        "For an initial admission enquiry, the website asks for the child's name, "
+        "grade and contact number. Families may instead call the admissions team at "
+        "+91 96630 21118. A counsellor calls to answer questions and arrange a visit."
+    )
+
+    answer = concise_source_answer(
+        "How to book it?",
+        "How can I arrange a campus visit by submitting an enquiry or calling admissions?",
+        content,
+    )
+
+    assert "+91 96630 21118" in answer
+    assert "arrange a visit" in answer

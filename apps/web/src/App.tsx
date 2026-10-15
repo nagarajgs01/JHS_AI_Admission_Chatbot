@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ChatHistoryMessage, ChatResponse, LeadInput, sendQuestion, submitContact, submitLead } from "./api";
 
 type Message = { role: "assistant" | "user"; text: string; result?: ChatResponse };
@@ -30,6 +30,7 @@ function detailLabel(detail: string) {
 }
 
 export function App() {
+  const messagesRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>([
     { role: "assistant", text: "Hello! How can I help you with Jain Heritage School today?" },
   ]);
@@ -47,6 +48,12 @@ export function App() {
     student_name: "", grade_applied_for: "", guardian_name: "",
     mobile_number: "", email: "", preferred_contact: "", consent_to_contact: false,
   });
+
+  useEffect(() => {
+    const panel = messagesRef.current;
+    if (!panel) return;
+    panel.scrollTo({ top: panel.scrollHeight, behavior: "smooth" });
+  }, [messages, pending, contactedQuestions]);
   async function ask(event: FormEvent) {
     event.preventDefault();
     const value = question.trim();
@@ -174,7 +181,7 @@ export function App() {
           </div>
           <div className="assistant-identity"><strong>School Assistant</strong><span>Verified school information</span></div>
         </header>
-        <div className="messages" aria-live="polite">
+        <div className="messages" aria-live="polite" ref={messagesRef}>
           {messages.map((message, index) => (
             <article className={`message ${message.role}`} key={`${message.role}-${index}`}>
               <p>{message.text}</p>

@@ -207,6 +207,17 @@ def resolve_contextual_question(question: str, history) -> str:
     current = " ".join(question.strip().split())
     lowered = current.lower()
 
+    if re.search(
+        r"\b(?:contact|reach|call|phone|telephone|email|e-mail)\b",
+        lowered,
+    ) or re.search(
+        r"\b(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?(?:person|someone|staff|team)\b|"
+        r"\b(?:want|what)\s+to\s+(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?"
+        r"(?:person|someone|staff|team)\b",
+        lowered,
+    ):
+        return "What are the school's phone number and email contact details?"
+
     # Canonicalize clear intent shapes before considering conversation history.
     # These queries use the vocabulary of the approved knowledge topics so that
     # generic wording does not rank an incidental passage above the intended one.
@@ -228,6 +239,10 @@ def resolve_contextual_question(question: str, history) -> str:
             "How can parents start the admission process by enquiring, visiting "
             "the campus and completing an application?"
         )
+    if re.search(r"\bhow\b.*\b(?:book|schedule|arrange|make)\w*\b", lowered) and re.search(
+        r"\b(?:visit|campus|appointment)\b", lowered
+    ):
+        return "How can I arrange a campus visit by submitting an enquiry or calling admissions?"
 
     if not history:
         return current
@@ -237,6 +252,23 @@ def resolve_contextual_question(question: str, history) -> str:
         if str(item.role).lower().endswith("user") and item.content.strip()
     ]
     prior = " ".join(user_turns).lower()
+
+    if (
+        re.search(r"\bhow\b.*\b(?:book|schedule|arrange|make)\w*\b", lowered)
+        or re.search(r"\bhow\s+(?:do|can)\s+(?:i|we)\s+do\s+(?:it|so|that)\b", lowered)
+        or re.search(r"\bhow\s+to\s+do\s+(?:it|so|that)\b", lowered)
+    ) and re.search(r"\b(?:visit|campus|appointment|book|booking)\b", prior):
+        return "How can I arrange a campus visit by submitting an enquiry or calling admissions?"
+
+    if re.search(
+        r"\bwhat\s+days?\b.*\bopen\b|\bwhich\s+days?\b.*\bopen\b|"
+        r"\bdays?\s+(?:is|are)\s+(?:it|the\s+(?:school|office))\s+open\b",
+        lowered,
+    ) and re.search(
+        r"\b(?:office|school|campus)\b.*\b(?:hours?|time|timings?|open)\b",
+        prior,
+    ):
+        return "On which days is the school office open, and what are its office hours?"
 
     if re.search(r"\b(?:why|purpose|reason).*(?:interaction)|conduct.*interaction\b", lowered) and re.search(
         r"\b(?:pre-primary|nursery|entrance|admission interaction)\b", prior
@@ -459,6 +491,21 @@ def should_offer_clarification(question: str, candidates) -> bool:
 
 def is_obviously_out_of_scope(question: str) -> bool:
     lowered = " ".join(question.lower().split())
+    arithmetic = re.fullmatch(
+        r"(?:what\s+is|what's|calculate|compute|solve)?\s*"
+        r"[-+]?\d+(?:\.\d+)?\s*(?:\+|-|\*|x|×|/|÷)\s*"
+        r"[-+]?\d+(?:\.\d+)?\s*[?=]?",
+        lowered,
+    )
+    arithmetic_words = re.fullmatch(
+        r"(?:what\s+is|what's|calculate|compute|solve)\s+"
+        r"[-+]?\d+(?:\.\d+)?\s+"
+        r"(?:plus|minus|times|multiplied\s+by|divided\s+by)\s+"
+        r"[-+]?\d+(?:\.\d+)?\s*\??",
+        lowered,
+    )
+    if arithmetic or arithmetic_words:
+        return True
     if re.search(
         r"\b(?:write|create|generate|debug|fix)\b.*\b(?:python|javascript|java|"
         r"typescript|code|program|function|array|sql)\b",
@@ -998,6 +1045,26 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
         return hits
     lowered = question.lower()
     requirements: list[tuple[re.Pattern, re.Pattern]] = []
+    if re.search(
+        r"\b(?:contact|reach|call|phone|telephone|email|e-mail)\b|"
+        r"\b(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?(?:person|someone|staff|team)\b|"
+        r"\b(?:want|what)\s+to\s+(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?"
+        r"(?:person|someone|staff|team)\b",
+        lowered,
+    ):
+        requirements.append(
+            (
+                re.compile(r"contact details", re.I),
+                re.compile(r"phone number.*email address|email address.*phone number", re.I | re.S),
+            )
+        )
+    if re.search(r"\b(?:what|which)\s+days?\b.*\bopen\b|\boffice hours?\b", lowered):
+        requirements.append(
+            (
+                re.compile(r"contact hours|office hours", re.I),
+                re.compile(r"monday.*saturday|office hours", re.I | re.S),
+            )
+        )
     if re.search(r"\b(?:where|located|location|address|state|city)\b", lowered):
         requirements.append((re.compile(r"location|contact details", re.I), re.compile(r"rayasandra|bengaluru|karnataka|located", re.I)))
     if "icse" in lowered and re.search(r"\b(?:subject|include|learning area)\w*\b", lowered):
@@ -1006,6 +1073,16 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
         requirements.append((re.compile(r"cbse pathway", re.I), re.compile(r"ncert|mathematics|science|cbse syllabus", re.I)))
     if re.search(r"\b(?:book|booking|appointment)\b", lowered) and re.search(r"\b(?:visit|campus)\b", lowered):
         requirements.append((re.compile(r"visit|contact hours", re.I), re.compile(r"booked in advance|book in advance|appointment", re.I)))
+    if re.search(r"\b(?:arrange|schedule|book|make)\w*\b", lowered) and re.search(
+        r"\b(?:enquiry|calling admissions|how can i)\b", lowered
+    ):
+        requirements.insert(
+            0,
+            (
+                re.compile(r"admission enquiry information", re.I),
+                re.compile(r"call.*admissions.*arrange a visit|counsellor.*arrange a visit", re.I | re.S),
+            ),
+        )
     if re.search(r"\b(?:visit|tour|come|see)\b", lowered) and "campus" in lowered:
         requirements.append((re.compile(r"visit|contact hours", re.I), re.compile(r"booked in advance|campus visits|office hours", re.I)))
     if re.search(r"\b(?:assess|assessment|exam|examination|rank)\w*\b", lowered):
@@ -1109,6 +1186,45 @@ def concise_source_answer(
 
     response_lower = response_question.lower()
     evidence_lower = evidence_question.lower()
+
+    asks_phone = bool(re.search(r"\b(?:phone|telephone|mobile|call)\b", response_lower))
+    asks_email = bool(re.search(r"\b(?:email|e-mail)\b", response_lower))
+    asks_contact = bool(
+        re.search(r"\b(?:contact|reach)\b", response_lower)
+        or re.search(
+            r"\b(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?(?:person|someone|staff|team)\b|"
+            r"\b(?:want|what)\s+to\s+(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?"
+            r"(?:person|someone|staff|team)\b",
+            response_lower,
+        )
+    )
+    if asks_phone or asks_email or asks_contact:
+        contact_sentences = [
+            _clean_source_attribution(sentence)
+            for sentence in sentences
+            if (
+                (asks_phone and re.search(r"\b(?:phone|telephone|mobile|call)\b|\+\d", sentence, re.I))
+                or (asks_email and re.search(r"\bemail\b|[\w.+-]+@[\w.-]+", sentence, re.I))
+                or (
+                    asks_contact
+                    and re.search(r"\b(?:phone|telephone|email)\b|\+\d|[\w.+-]+@[\w.-]+", sentence, re.I)
+                )
+            )
+        ]
+        if contact_sentences:
+            return " ".join(dict.fromkeys(contact_sentences[:2]))
+
+    if re.search(r"\b(?:what|which)\s+days?\b.*\bopen\b", response_lower):
+        office_days = next(
+            (
+                _clean_source_attribution(sentence)
+                for sentence in sentences
+                if re.search(r"\bmonday\b.*\bsaturday\b", sentence, re.I)
+            ),
+            None,
+        )
+        if office_days:
+            return office_days
 
     benefit_request = bool(re.search(
         r"\b(?:how\s+(?:does|do)\s+.*\bhelp|what\s+(?:abilities|skills|benefits)|"
@@ -1252,6 +1368,26 @@ def concise_source_answer(
         )
         if booking:
             return _clean_source_attribution(booking)
+
+    if re.search(r"\bhow\b.*\b(?:arrange|schedule|book|make)\w*\b", evidence_lower) and re.search(
+        r"\b(?:visit|campus|appointment)\b", evidence_lower
+    ):
+        direct_method_sentences = [
+            _clean_source_attribution(sentence)
+            for sentence in sentences
+            if re.search(
+                r"\b(?:call|phone|counsellor|arrange a visit|visit slot)\w*\b",
+                sentence,
+                re.I,
+            )
+        ]
+        method_sentences = direct_method_sentences or [
+            _clean_source_attribution(sentence)
+            for sentence in sentences
+            if re.search(r"\b(?:enquir|submit)\w*\b", sentence, re.I)
+        ]
+        if method_sentences:
+            return " ".join(method_sentences[:2])
 
     asks_for_activity_list = bool(
         re.search(
