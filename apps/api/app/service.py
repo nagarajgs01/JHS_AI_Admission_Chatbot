@@ -16,6 +16,7 @@ from .models import (
 )
 from .retrieval import InMemoryKnowledgeRepository
 from .retrieval_policy import (
+    correct_query_typos,
     evaluate_evidence,
     expand_query,
     has_likely_typo,
@@ -159,12 +160,15 @@ def is_conversation_followup(question: str, history) -> bool:
         return False
     lowered = " ".join(question.lower().split())
     token_count = len(re.findall(r"[a-z0-9]+", lowered))
-    if re.search(r"\b(it|its|that|this|those|these|they|them|there|same|former|latter)\b", lowered):
+    if re.search(r"\b(it|its|that|this|those|these|they|them|there|same|former|latter|her|him)\b", lowered):
         return True
     if re.search(
         r"\b(?:which one|which option|how much|what cost|who provides|"
         r"what time can (?:we|i)|when can (?:we|i)|how does that|"
-        r"what subjects?|tell me more)\b",
+        r"what subjects?|tell me more|give me (?:more )?(?:details|information)|"
+        r"what (?:abilities|skills|benefits)|"
+        r"(?:explain|describe).*(?:simply|more)|"
+        r"one of (?:them|those)|what about)\b",
         lowered,
     ):
         return True
@@ -193,6 +197,118 @@ def followup_retrieval_query(question: str, history) -> str:
     return " ".join([*recent_user_turns, question.strip()])
 
 
+def resolve_contextual_question(question: str, history) -> str:
+    """Turn a session follow-up into a focused standalone retrieval question.
+
+    Conversation text is used only to resolve references. It never becomes answer
+    evidence; the final answer must still come from a published knowledge entry.
+    """
+
+    current = " ".join(question.strip().split())
+    lowered = current.lower()
+
+    # Canonicalize clear intent shapes before considering conversation history.
+    # These queries use the vocabulary of the approved knowledge topics so that
+    # generic wording does not rank an incidental passage above the intended one.
+    if re.search(r"\b(?:assess|assessment|evaluate|evaluation)\w*\b", lowered):
+        return (
+            "How are students in Grades 1-7 assessed through portfolios, "
+            "projects, presentations and unit tests?"
+        )
+    if re.search(
+        r"\b(?:may|can|could|would)\b.*\b(?:come|see|tour|visit)\b.*\bcampus\b|"
+        r"\b(?:tour|visit)\s+(?:the\s+)?campus\b",
+        lowered,
+    ):
+        return "Can parents visit the campus, and should the visit be booked in advance?"
+
+    if not history:
+        return current
+    user_turns = [
+        item.content.strip()
+        for item in history[-8:]
+        if str(item.role).lower().endswith("user") and item.content.strip()
+    ]
+    prior = " ".join(user_turns).lower()
+
+    if re.search(r"\b(?:assess|assessment|evaluate|evaluation|exam|examination|rank|ranking)\w*\b", lowered):
+        if re.search(r"\b(?:rank|ranking|ranked|against each other)\b", lowered):
+            return "Does the school publish a rank order for children?"
+        return current
+
+    if re.search(r"\b(?:food[- ]?service|meal[- ]?service).*(?:partner|provider)|who.*(?:partner|provider)\b", lowered):
+        return "Who is the school meal-service partner?"
+    if re.search(r"\b(?:allerg|dietary|intolerance|special diet)\w*\b", lowered) and re.search(r"\b(?:meal|food)\b", prior):
+        return "How does the school handle food allergies and dietary needs?"
+
+    if re.search(r"\b(?:after|step after|what comes next).*(?:form|application)\b", lowered):
+        return "What happens after completing and submitting the admission application?"
+
+    if re.search(r"\b(?:booking|book|appointment)\b", lowered) and re.search(r"\b(?:campus|visit|tour|come|see)\b", prior):
+        return "Should a campus visit be booked in advance?"
+
+    if re.search(
+        r"\b(?:neighbou?rhoods?|localit(?:y|ies)|areas?)\b.*"
+        r"\b(?:cover|covered|serve|served)\b",
+        lowered,
+    ) and re.search(r"\b(?:bus(?:es)?|transport(?:ation)?|route)\b", prior):
+        return "Does school transport cover every area, or must route coverage be confirmed?"
+
+    if re.search(r"\bwhy\b.*\bonly\s+(?:cbse|icse)\b", lowered):
+        return "Does the school offer both CBSE and ICSE?"
+
+    # An explicitly named school entity is stronger than the surrounding
+    # conversation and should become the retrieval anchor.
+    named_pathway = next(
+        (pathway.upper() for pathway in ("cbse", "icse") if pathway in lowered),
+        None,
+    )
+    if named_pathway and re.search(
+        r"\b(?:tell|explain|describe|details?|information|more|pathway|programme|program|curriculum|syllabus)\b",
+        lowered,
+    ):
+        return f"Explain the {named_pathway} pathway and curriculum."
+
+    # Carry the most recently named board into a pronoun-based exam follow-up.
+    if re.search(r"\b(?:jee|neet|cuet|exam|exams|entrance examination)\b", lowered):
+        recent_board = None
+        for turn in reversed(user_turns):
+            match = re.search(r"\b(cbse|icse)\b", turn, re.I)
+            if match:
+                recent_board = match.group(1).upper()
+                break
+        if recent_board:
+            return f"Does the {recent_board} pathway align with JEE, NEET or CUET preparation?"
+
+    if re.search(r"\bwhere(?:\s+exactly)?\s+(?:is|are)\s+(?:it|that|the school)\b", lowered):
+        return "Where is Jain Heritage School Electronic City located?"
+
+    if re.search(r"\b(?:what|which)\s+subjects?\b", lowered):
+        if "icse" in prior:
+            return "What subjects does the ICSE curriculum include?"
+        if "cbse" in prior:
+            return "What subjects does the CBSE curriculum include?"
+
+    if re.search(r"\b(?:book|booking|appointment|reserve)\b", lowered) and re.search(
+        r"\b(?:come|coming|visit|campus|before)\b", lowered
+    ):
+        return "Should a campus visit be booked in advance?"
+
+    grade = re.findall(r"\b(?:grade|class)\s*(\d{1,2})\b", prior, re.I)
+    if grade and re.search(r"\b(?:age|old|birth|dob|eligib)\w*\b", lowered):
+        return f"What is the exact age requirement for Grade {grade[-1]}?"
+
+    if re.search(r"\b(?:which|what)\s+(?:board|curriculum|one).*\b(?:suit|fit|better)\b|\bmay suit\b", lowered):
+        preferences = []
+        for term in ("languages", "language", "writing", "science", "mathematics", "maths", "move between cities", "portable"):
+            if term in prior:
+                preferences.append(term)
+        suffix = f" The child prefers {' and '.join(dict.fromkeys(preferences))}." if preferences else ""
+        return f"Which board may suit the child?{suffix}"
+
+    return followup_retrieval_query(question, history)
+
+
 def context_acknowledgement(message: str) -> str | None:
     """Acknowledge parent context statements without creating a staff ticket."""
 
@@ -206,7 +322,8 @@ def context_acknowledgement(message: str) -> str | None:
         return None
     family_context = re.search(r"\b(?:my|our)\s+(?:child|son|daughter)\b", lowered)
     application_context = re.search(
-        r"\b(?:applying|application|interested|considering|seeking admission)\b",
+        r"\b(?:applying|application|interested|considering|seeking admission|"
+        r"will join|will be in|joining|plans? to join|enjoys?|likes?|prefers?)\b",
         lowered,
     )
     if family_context and application_context:
@@ -271,7 +388,14 @@ def is_clear_missing_information(question: str) -> bool:
         "seats",
         "vacancy",
         "availability",
+        "holiday",
+        "holidays",
     } & terms:
+        return True
+    if re.search(r"\b(?:today|tomorrow|next|current|this week|this month)\b", lowered) and re.search(
+        r"\b(?:menu|meal plan|lunch|holiday|calendar|event|meeting|schedule)\b",
+        lowered,
+    ):
         return True
     if any(phrase in lowered for phrase in ("my child", "my application", "application status")):
         return True
@@ -280,6 +404,23 @@ def is_clear_missing_information(question: str) -> bool:
     ):
         return True
     return False
+
+
+def is_dynamic_operational_question(question: str) -> bool:
+    """Identify live operational facts that static approved knowledge cannot prove."""
+
+    lowered = " ".join(question.lower().split())
+    time_sensitive = re.search(
+        r"\b(?:today|tomorrow|tonight|next|current|right now|this week|this month|"
+        r"this term|this year)\b",
+        lowered,
+    )
+    operational = re.search(
+        r"\b(?:menu|food|meal|lunch|holiday|calendar|parent-teacher meeting|ptm|event|"
+        r"class teacher|seat availability|seats available)\b",
+        lowered,
+    )
+    return bool(time_sensitive and operational)
 
 
 def candidate_matches_intent(question: str, candidate) -> bool:
@@ -303,6 +444,12 @@ def should_offer_clarification(question: str, candidates) -> bool:
 
 def is_obviously_out_of_scope(question: str) -> bool:
     lowered = " ".join(question.lower().split())
+    if re.search(
+        r"\b(?:write|create|generate|debug|fix)\b.*\b(?:python|javascript|java|"
+        r"typescript|code|program|function|array|sql)\b",
+        lowered,
+    ):
+        return True
     school_time_context = re.search(
         r"\b(school|class|admission|campus|application|deadline|birth|cutoff|cut-off|timing|timings|hours|visit|visiting|tour|appointment)\b",
         lowered,
@@ -357,12 +504,14 @@ def is_prompt_injection(question: str) -> bool:
     lowered = " ".join(question.lower().split())
     bypass = re.search(
         r"\b(?:ignore|disregard|override|forget|bypass)\b.*"
-        r"\b(?:instruction|instructions|rules|policy|prompt|system)\b",
+        r"\b(?:instruction|instructions|rules|policy|prompt|system|"
+        r"knowledge base|sources?|evidence)\b",
         lowered,
     )
     fabrication = re.search(
         r"\b(?:invent|fabricate|make up|guess)\b.*"
-        r"\b(?:answer|details?|fees?|facts?|information)\b",
+        r"\b(?:answer|details?|fees?|facts?|information|deadline|seat|"
+        r"schedule|timings?|name|date)\b",
         lowered,
     )
     return bool(bypass or fabrication)
@@ -372,19 +521,60 @@ def contains_unsupported_negative_premise(question: str) -> bool:
     """Detect a question that asks the bot to accept an unverified negative claim."""
 
     lowered = " ".join(question.lower().split())
-    return bool(
+    negative_group_claim = bool(
         re.search(r"\bwhy\s+(?:does|do|is|are|can|will)\b", lowered)
         and re.search(
-            r"\b(?:not|never|refuse|refuses|ban|bans|forbid|forbids|"
+            r"\b(?:not|never|refuse|refuses|reject|rejects|ban|bans|forbid|forbids|"
             r"exclude|excludes|deny|denies|doesn't|don't|isn't|aren't)\b",
             lowered,
         )
-        and re.search(
-            r"\b(?:allow|accept|admit|girls?|boys?|religion|caste|disability|"
-            r"disabled|nationality|race|gender)\b",
-            lowered,
+        and (
+            re.search(
+                r"\b(?:girls?|boys?|religion|caste|disability|disabled|"
+                r"nationality|race|gender)\b",
+                lowered,
+            )
+            or re.search(
+                r"\b(?:allow|accept|admit|reject|deny|exclude)\b.*"
+                r"\b(?:children|students|applicants|families)\b",
+                lowered,
+            )
         )
     )
+    compulsory_claim = bool(
+        re.search(r"\bwhy\s+(?:is|are)\b", lowered)
+        and re.search(r"\b(?:compulsory|mandatory|required)\b", lowered)
+    )
+    return negative_group_claim or compulsory_claim
+
+
+def supplied_pickup_area(question: str) -> str | None:
+    """Extract a parent-supplied route locality without treating it as school fact."""
+
+    explicit_place = re.search(
+        r"\b(?:from|near|around|at)\s+([a-z0-9][a-z0-9 .'-]{1,60}?)(?:[?.!,]|$)",
+        question,
+        flags=re.IGNORECASE,
+    )
+    if explicit_place:
+        value = " ".join(explicit_place.group(1).strip().split())
+        if value.lower() not in {"me", "my area", "my location", "my address", "there", "here"}:
+            return value
+    match = re.search(
+        r"\b(?:from|at|in|near|around|to|cover|covers|serve|serves|collect|collects|pick up|pickup|pick-up)\s+"
+        r"([a-z0-9][a-z0-9 .'-]{1,60}?)(?:[?.!,]|$)",
+        question,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = " ".join(match.group(1).strip().split())
+    if value.lower() in {
+        "me", "my area", "my location", "my address", "our area",
+        "our location", "there", "here", "the area", "this area",
+    }:
+        return None
+    return value
 
 
 def transport_location_continuation(question: str, history) -> str | None:
@@ -402,15 +592,16 @@ def transport_location_continuation(question: str, history) -> str | None:
     ):
         return None
     recent_user = " ".join(
-        item.content for item in history[-4:] if item.role == "user"
+        item.content for item in history[-8:] if str(item.role).lower().endswith("user")
     ).lower()
     recent_assistant = " ".join(
-        item.content for item in history[-4:] if item.role == "assistant"
+        item.content for item in history[-8:] if str(item.role).lower().endswith("assistant")
     ).lower()
     asked_for_location = bool(
-        re.search(r"\b(?:bus|transport|route|pickup|pick-up)\b", recent_user)
+        re.search(r"\b(?:bus|transport|transportation|route|pickup|pick-up)\b", recent_user)
         and (
             re.search(r"\b(?:my area|my location|cover|come to|serve)\b", recent_user)
+            or re.search(r"\b(?:cost|fee|price|charge|how much)\b", recent_user)
             or "few details" in recent_assistant
         )
     )
@@ -443,7 +634,7 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
         "address",
     }:
         match = re.search(
-            r"\b(?:cover|covers|serve|serves|from|at|in|near|around|to)\s+"
+            r"\b(?:cover|covers|serve|serves|from|at|in|near|around|to|collect|collects|pick up|pickup|pick-up)\s+"
             r"([a-z0-9][a-z0-9 .'-]{1,60}?)(?:[?.!,]|$)",
             question,
             flags=re.IGNORECASE,
@@ -467,7 +658,7 @@ def is_specific_transport_coverage_request(question: str) -> bool:
         lowered,
     )
     coverage = re.search(
-        r"\b(?:come|comes|cover|covers|serve|serves|available|pickup|pick-up)\b",
+        r"\b(?:come|comes|cover|covers|serve|serves|available|pickup|pick-up|collect|collects|pick)\b",
         lowered,
     )
     personal_place = re.search(
@@ -475,6 +666,17 @@ def is_specific_transport_coverage_request(question: str) -> bool:
         lowered,
     ) or detail_is_already_supplied(question, "pickup_area")
     return bool(transport and coverage and personal_place)
+
+
+def is_broad_transport_coverage_question(question: str) -> bool:
+    """Identify questions asking whether every locality is served."""
+
+    lowered = " ".join(question.lower().split())
+    return bool(
+        re.search(r"\b(?:transport|bus|route)\b", lowered)
+        and re.search(r"\b(?:all|every)\s+(?:areas?|localities|neighbou?rhoods?)\b", lowered)
+        and re.search(r"\b(?:cover|covered|serve|served|available)\b", lowered)
+    )
 
 
 def deterministic_missing_details(
@@ -557,7 +759,7 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
     if not hits:
         return hits
     terms = typo_tolerant_query_tokens(question)
-    if not terms & {"board", "curriculum", "syllabus"}:
+    if not terms & {"board", "curriculum", "syllabus", "cbse", "icse"}:
         return hits
     requested_pathway = next(
         (pathway for pathway in ("cbse", "icse") if pathway in terms),
@@ -568,7 +770,14 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
         other_pathway = "icse" if requested_pathway == "cbse" else "cbse"
         for index, hit in enumerate(hits):
             title = hit.entry.title.lower()
-            if requested_pathway not in title or hit.score < minimum_score:
+            approved_by_policy = getattr(hit, "evidence_supported", False)
+            dedicated_pathway = f"{requested_pathway} pathway" in title
+            pathway_floor = max(0.25, minimum_score * 0.65)
+            if requested_pathway not in title or (
+                hit.score < minimum_score
+                and not approved_by_policy
+                and not (dedicated_pathway and hit.score >= pathway_floor)
+            ):
                 continue
             decision = evaluate_evidence(
                 question,
@@ -576,8 +785,15 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
                 hit.score,
                 minimum_score,
             )
-            if decision.supported:
-                dedicated_pathway = f"{requested_pathway} pathway" in title
+            content_alignment = expanded_keyword_score(
+                question,
+                f"{hit.entry.title} {hit.entry.content}",
+            )
+            if (
+                decision.supported
+                or approved_by_policy
+                or (dedicated_pathway and content_alignment >= 0.35)
+            ):
                 excludes_other_pathway = other_pathway not in title
                 candidates.append(
                     (
@@ -666,7 +882,7 @@ def prioritize_geographic_location(question: str, hits, minimum_score: float):
         re.search(
             r"\b(?:what|which)\s+(?:state|city|district|country)\b|"
             r"\b(?:state|city|district|country)\s+(?:is|does)\b|"
-            r"\bwhere\s+(?:is|are)\b|\b(?:located|location|address)\b",
+            r"\bwhere(?:\s+exactly)?\s+(?:is|are)\b|\b(?:located|location|address)\b",
             lowered,
         )
     )
@@ -698,7 +914,10 @@ def prioritize_campus_visit(question: str, hits, minimum_score: float):
     if not hits:
         return hits
     lowered = question.lower()
-    if not re.search(r"\b(?:visit|visiting|tour|appointment|come to|see)\b", lowered):
+    if not re.search(
+        r"\b(?:visit|visiting|tour|appointment|come|coming|book|booking)\b",
+        lowered,
+    ):
         return hits
     for index, hit in enumerate(hits):
         title = hit.entry.title.lower()
@@ -723,6 +942,86 @@ def prioritize_campus_visit(question: str, hits, minimum_score: float):
     return hits
 
 
+def prioritize_whole_child_learning(question: str, hits, minimum_score: float):
+    """Prefer developmental philosophy for questions that move beyond marks."""
+
+    if not hits or not re.search(
+        r"\b(?:only marks|beyond marks|what else|whole child|overall development|"
+        r"holistic|emotional|social|physical development)\b",
+        question,
+        flags=re.IGNORECASE,
+    ):
+        return hits
+    for index, hit in enumerate(hits):
+        searchable = f"{hit.entry.title} {hit.entry.content}".lower()
+        if hit.score < minimum_score:
+            continue
+        if not re.search(
+            r"\b(?:educational philosophy|whole child|intellectual|moral|physical|"
+            r"social|emotional|character|leadership)\b",
+            searchable,
+        ):
+            continue
+        if index:
+            return [hit, *hits[:index], *hits[index + 1:]]
+        return hits
+    return hits
+
+
+def prioritize_requested_fact(question: str, hits, minimum_score: float):
+    """Prefer the entry that contains the requested entity and fact together."""
+
+    if not hits:
+        return hits
+    lowered = question.lower()
+    requirements: list[tuple[re.Pattern, re.Pattern]] = []
+    if re.search(r"\b(?:where|located|location|address|state|city)\b", lowered):
+        requirements.append((re.compile(r"location|contact details", re.I), re.compile(r"rayasandra|bengaluru|karnataka|located", re.I)))
+    if "icse" in lowered and re.search(r"\b(?:subject|include|learning area)\w*\b", lowered):
+        requirements.append((re.compile(r"icse pathway", re.I), re.compile(r"english.*mathematics|computer applications|learning areas", re.I | re.S)))
+    if "cbse" in lowered and re.search(r"\b(?:subject|include|syllabus|pathway)\w*\b", lowered):
+        requirements.append((re.compile(r"cbse pathway", re.I), re.compile(r"ncert|mathematics|science|cbse syllabus", re.I)))
+    if re.search(r"\b(?:book|booking|appointment)\b", lowered) and re.search(r"\b(?:visit|campus)\b", lowered):
+        requirements.append((re.compile(r"visit|contact hours", re.I), re.compile(r"booked in advance|book in advance|appointment", re.I)))
+    if re.search(r"\b(?:visit|tour|come|see)\b", lowered) and "campus" in lowered:
+        requirements.append((re.compile(r"visit|contact hours", re.I), re.compile(r"booked in advance|campus visits|office hours", re.I)))
+    if re.search(r"\b(?:assess|assessment|exam|examination|rank)\w*\b", lowered):
+        requirements.append((re.compile(r"learning and assessment", re.I), re.compile(r"assessment|rank order|projects|unit tests", re.I)))
+    if re.search(r"\b(?:meal|food).*(?:partner|provider)|(?:partner|provider).*(?:meal|food)\b", lowered):
+        requirements.append((re.compile(r"meal", re.I), re.compile(r"sodexo|meal-service partner", re.I)))
+    if re.search(r"\b(?:allerg|dietary|intolerance)\w*\b", lowered):
+        requirements.append((re.compile(r"meal", re.I), re.compile(r"allerg|dietary", re.I)))
+    if re.search(r"\bgrade\s*12\b|\bextend\b|\bgrow\b", lowered):
+        requirements.append((re.compile(r"grades and curriculum", re.I), re.compile(r"grade 12|reaching grade 12", re.I)))
+    if not requirements:
+        return hits
+
+    # Exact title-and-content agreement is stronger than the aggregate hybrid
+    # score for short questions, so allow a low floor without accepting a
+    # merely related passage.
+    floor = max(0.10, minimum_score * 0.30)
+    for title_pattern, content_pattern in requirements:
+        for index, hit in enumerate(hits):
+            if hit.score < floor:
+                continue
+            if title_pattern.search(hit.entry.title) and content_pattern.search(hit.entry.content):
+                if index:
+                    return [hit, *hits[:index], *hits[index + 1:]]
+                return hits
+    return hits
+
+
+def is_clear_unsupported_school_requirement(question: str) -> bool:
+    """Skip misleading suggestions for requirements needing staff confirmation."""
+
+    return bool(re.search(
+        r"\b(?:wheelchair|accessible|accessibility|mobility|medical|medication|"
+        r"special accommodation|reasonable accommodation|individual support need)\b",
+        question,
+        flags=re.IGNORECASE,
+    ))
+
+
 def _clean_source_attribution(sentence: str) -> str:
     """Remove source-reporting boilerplate without changing the underlying fact."""
 
@@ -732,8 +1031,10 @@ def _clean_source_attribution(sentence: str) -> str:
         (r"^The school states that\s+", ""),
         (r"^The official website states that\s+", ""),
         (r"^The official website says that\s+", ""),
+        (r"^The official website describes it as\s+", "It is "),
         (r"^The brochure says that\s+", ""),
         (r"^The official brochure states that\s+", ""),
+        (r"^It says the\s+", "The "),
         (r"^The school says it does not\s+", "The school does not "),
     )
     cleaned = sentence.strip()
@@ -775,14 +1076,208 @@ def concise_source_answer(
         return content.strip()
 
     response_lower = response_question.lower()
+    evidence_lower = evidence_question.lower()
+
+    benefit_request = bool(re.search(
+        r"\b(?:how\s+(?:does|do)\s+.*\bhelp|what\s+(?:abilities|skills|benefits)|"
+        r"benefits?\s+(?:does|do)|explain.*benefits?|benefits?.*simply)\b",
+        response_lower,
+    ))
+
+    if re.search(r"\bgrade\s*12\b", response_lower):
+        grade_12 = next(
+            (sentence for sentence in sentences if re.search(r"\bgrade\s*12\b", sentence, re.I)),
+            None,
+        )
+        if grade_12:
+            fact = _clean_source_attribution(grade_12)
+            return f"Yes. {fact}" if re.match(r"\s*(?:will|does|is|can)\b", response_question, re.I) else fact
+
+    if re.search(r"\b(?:explain|describe|details?|more)\b", response_lower):
+        if "icse" in response_lower and re.search(r"\blanguage-rich\b", content, re.I):
+            return " ".join(_clean_source_attribution(sentence) for sentence in sentences[:2])
+        if "cbse" in response_lower and re.search(r"\bncert\b", content, re.I):
+            return " ".join(_clean_source_attribution(sentence) for sentence in sentences[:2])
+
+    # Recommendations are framed as evidence-based guidance, not certainty.
+    if re.search(r"\b(?:which|what)\s+(?:one|board).*\b(?:suit|fit|better)\b|\bmay suit\b", response_lower):
+        combined = f"{evidence_lower} {response_lower}"
+        if re.search(r"\b(?:language|languages|writing|literature)\b", combined) and re.search(
+            r"\bICSE\b[^.]*\b(?:language-rich|language|analytically focused)\b",
+            content,
+            flags=re.IGNORECASE,
+        ):
+            return (
+                "ICSE is described as broad, language-rich and analytically focused, "
+                "so it may be a suitable option."
+            )
+        if re.search(r"\b(?:science|mathematics|maths|portable|move|moving|cities|jee|neet|cuet)\b", combined) and re.search(
+            r"\bCBSE\b[^.]*\b(?:NCERT|portable|Mathematics|Science|JEE|NEET|CUET)\b",
+            content,
+            flags=re.IGNORECASE,
+        ):
+            return (
+                "CBSE is described as NCERT-aligned, nationally portable, and strong "
+                "in Mathematics and Science foundations, so it may be a suitable option."
+            )
+
+    # Polarity-sensitive questions must use an explicit approved positive or
+    # negative statement. Never infer "Yes" merely because the topic matched.
+    if re.search(r"\b(?:rank|ranking|ranked)\b", response_lower):
+        no_rank = re.search(
+            r"(?:The school says it )?does not publish a rank order[^.]*\.?",
+            content,
+            flags=re.IGNORECASE,
+        )
+        if no_rank:
+            fact = _clean_source_attribution(no_rank.group(0).strip())
+            return f"No. {fact}"
+
+    if re.search(r"\b(?:only|solely)\b.*\b(?:exam|exams|examination|examinations|marks|tests)\b", response_lower):
+        varied = [
+            _clean_source_attribution(sentence) for sentence in sentences
+            if re.search(r"\b(?:observation|discussion|journals?|peer assessment|self-assessment|projects?|presentations?|unit tests?)\b", sentence, re.I)
+        ]
+        if varied:
+            return f"No. {varied[0]}"
+
+    # General assessment questions should foreground the actual assessment
+    # methods, not an adjacent sentence about learning styles. Keep the answer
+    # entirely extractive by selecting the approved assessment sentences.
+    if re.search(r"\b(?:assess|assessment|evaluate|evaluation)\w*\b", response_lower):
+        assessment_sentences = [
+            _clean_source_attribution(sentence)
+            for sentence in sentences
+            if re.search(
+                r"\b(?:assessment|assessed|observation|discussion|journals?|"
+                r"peer assessment|self-assessment|projects?|presentations?|"
+                r"unit tests?|learning portfolio)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+        ]
+        if assessment_sentences:
+            return " ".join(assessment_sentences[:2])
+
+    # Provider, dietary-requirement and activity-list questions should return
+    # the matching approved fact instead of the first sentence in the entry.
+    if re.search(r"\b(?:meal|food)[-\s]+(?:service[-\s]+)?(?:partner|provider)\b|\bwho\s+(?:provides|supplies|serves)\b", response_lower):
+        provider = next(
+            (
+                sentence for sentence in sentences
+                if re.search(r"\b(?:provider|partner|sodexo|provided by)\b", sentence, re.I)
+            ),
+            None,
+        )
+        if provider:
+            return _clean_source_attribution(provider)
+
+    if re.search(r"\b(?:allerg|dietary|diet restriction|intolerance)\w*\b", response_lower):
+        dietary = next(
+            (
+                sentence for sentence in sentences
+                if re.search(r"\b(?:allerg|dietary|intolerance|special diet)\w*\b", sentence, re.I)
+            ),
+            None,
+        )
+        if dietary:
+            return _clean_source_attribution(dietary)
+
+    if re.search(
+        r"\b(?:is|are)\s+(?:food|meals?)\s+(?:served|available)\b|"
+        r"\b(?:does|do)\s+.*\b(?:provide|serve|offer)\s+(?:food|meals?)\b",
+        response_lower,
+    ):
+        availability = next(
+            (
+                sentence for sentence in sentences
+                if re.search(r"\b(?:meals?|food)\b", sentence, re.I)
+                and re.search(r"\b(?:served|provide|prepared|cooked|available|designed)\w*\b", sentence, re.I)
+                and "optional" not in sentence.lower()
+            ),
+            None,
+        )
+        if availability:
+            return f"Yes. {_clean_source_attribution(availability)}"
+
+    if re.search(r"\b(?:compulsory|mandatory|required|optional)\b", response_lower) and re.search(
+        r"\b(?:meal|meals|food)\b", response_lower
+    ):
+        optional = next(
+            (sentence for sentence in sentences if re.search(r"\bmeals?\b[^.]*\boptional\b", sentence, re.I)),
+            None,
+        )
+        if optional:
+            fact = _clean_source_attribution(optional)
+            return f"No. {fact}" if re.search(r"\b(?:compulsory|mandatory|required)\b", response_lower) else fact
+
+    if re.search(r"\b(?:book|booking|appointment|reserve)\b", response_lower) and re.search(
+        r"\b(?:visit|come|coming|campus|before)\b", response_lower
+    ):
+        booking = next(
+            (sentence for sentence in sentences if re.search(r"\b(?:booked in advance|book in advance|appointment)\b", sentence, re.I)),
+            None,
+        )
+        if booking:
+            return _clean_source_attribution(booking)
+
+    asks_for_activity_list = bool(
+        re.search(
+            r"\b(?:what|which)\s+(?:sports?|physical activities|activities)\b|"
+            r"\b(?:sports?|physical activities).*(?:available|offer|participate)\b",
+            response_lower,
+        )
+    )
+    if asks_for_activity_list:
+        activity_sentence = next(
+            (
+                sentence for sentence in sentences
+                if len(re.findall(
+                    r"\b(?:basketball|volleyball|table tennis|badminton|swimming|"
+                    r"cricket|futsal|indoor games)\b",
+                    sentence,
+                    flags=re.IGNORECASE,
+                )) >= 2
+            ),
+            None,
+        )
+        if activity_sentence:
+            return _clean_source_attribution(activity_sentence)
+
+    # Current fee questions need the availability statement first. A category
+    # list alone must not look like the requested exact amount.
+    if not re.search(r"\bwhy\b", response_lower) and re.search(
+        r"\b(?:exact|current|this year)\b.*\b(?:fee|fees|cost|price)\b|"
+        r"\bfee\b.*\b(?:exact|current|this year)\b",
+        response_lower,
+    ):
+        unavailable = next(
+            (
+                sentence for sentence in sentences
+                if re.search(r"\b(?:does not publish exact fee|exact amounts? must be confirmed|request the current figures)\b", sentence, re.I)
+            ),
+            None,
+        )
+        if unavailable:
+            return _clean_source_attribution(unavailable)
 
     # A process-stage follow-up should continue from the named stage instead of
     # repeating the complete approved process. The returned clauses remain
     # verbatim source facts, with only capitalization adjusted.
-    if re.search(r"\bafter\s+(?:the\s+)?campus visit\b", response_lower):
+    if re.search(
+        r"\b(?:after|following)\s+(?:the\s+)?(?:campus\s+)?visit(?:ing)?\b|"
+        r"\bwhat comes after\s+visit(?:ing)?\b|"
+        r"\bafter\s+(?:submitting|completing)\s+(?:the\s+)?(?:application|form)\b|"
+        r"\bstep\s+after\s+(?:submitting|completing)\s+(?:the\s+)?(?:application|form)\b",
+        response_lower,
+    ):
         clauses = [part.strip(" .") for part in re.split(r"[;]", content) if part.strip()]
+        stage_pattern = (
+            r"visit the campus" if "visit" in response_lower
+            else r"complete the application|submitting the application"
+        )
         visit_index = next(
-            (index for index, clause in enumerate(clauses) if "visit the campus" in clause.lower()),
+            (index for index, clause in enumerate(clauses) if re.search(stage_pattern, clause, re.I)),
             None,
         )
         if visit_index is not None and visit_index + 1 < len(clauses):
@@ -812,7 +1307,60 @@ def concise_source_answer(
             if len(subject_terms.findall(sentence)) >= 3
         ]
         if subject_sentences:
-            return _clean_source_attribution(subject_sentences[0])
+            subject_sentence = subject_sentences[0]
+            listed = re.search(
+                r"\bwith\s+(.+?)\s+among the learning areas(?:\s+for\s+[^.]*)?\.?$",
+                subject_sentence,
+                flags=re.IGNORECASE,
+            )
+            if listed:
+                return f"The curriculum includes {listed.group(1).strip().rstrip('.')}."
+            return _clean_source_attribution(subject_sentence)
+
+    # Return only the geographic entity requested, provided that the entity is
+    # explicitly present in the approved passage.
+    if re.search(r"\b(?:what|which)\s+state\b", response_lower):
+        indian_states = (
+            "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+            "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh",
+            "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+            "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland",
+            "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+            "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand",
+            "West Bengal", "Delhi", "Chandigarh", "Jammu and Kashmir",
+            "Ladakh", "Puducherry",
+        )
+        for state in indian_states:
+            if re.search(rf"\b{re.escape(state)}\b", content, flags=re.IGNORECASE):
+                return f"{state}."
+
+    # A useful "why" answer needs both the approved policy/condition and its
+    # approved explanation. Do not return the explanation without identifying
+    # what it explains.
+    if re.search(r"\bwhy\b", response_lower):
+        policy_sentences = [
+            sentence for sentence in sentences
+            if re.search(
+                r"\b(?:does not|do not|is not|are not|not published|not available)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+            and expanded_keyword_score(response_question, sentence) > 0
+        ]
+        explanation_sentences = [
+            sentence for sentence in sentences
+            if re.search(
+                r"\b(?:because|depends|vary|varies|shared directly|current structure|"
+                r"grade-specific|optional|route|distance)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+        ]
+        if policy_sentences and explanation_sentences:
+            combined = [policy_sentences[0]]
+            if explanation_sentences[0] != policy_sentences[0]:
+                combined.append(explanation_sentences[0])
+            return " ".join(_clean_source_attribution(sentence) for sentence in combined)
 
     scored = []
     for index, sentence in enumerate(sentences):
@@ -831,15 +1379,11 @@ def concise_source_answer(
             sentence_lower,
         ):
             score += 1.0
-        if re.search(r"\bhow\s+(?:does|do)\s+.*\bhelp\b", response_lower) and re.search(
+        if benefit_request and re.search(
             r"\b(?:help|develop|skills?|practise|practice|language|reasoning|problem-solving)\b",
             sentence_lower,
         ):
             score += 2.0
-        if re.search(r"\b(?:what|which)\s+state\b", response_lower):
-            state = re.search(r"\b(karnataka)\b", sentence_lower)
-            if state:
-                return "Karnataka."
         if re.search(r"\bwhat\s+sports?\b|\bsports?.*(?:participate|available|offer)\b", response_lower):
             if re.search(
                 r"\b(?:basketball|volleyball|table tennis|badminton|swimming|"
@@ -858,6 +1402,12 @@ def concise_source_answer(
             sentence_lower,
         ):
             score += 1.0
+        if re.search(r"\bwhy\b", response_lower) and re.search(
+            r"\b(?:because|depends|vary|varies|shared directly|current structure|"
+            r"grade-specific|optional|route|distance)\b",
+            sentence_lower,
+        ):
+            score += 1.5
         scored.append((score, index, sentence))
     best_score = max(score for score, _, _ in scored)
     selected = [
@@ -870,7 +1420,17 @@ def concise_source_answer(
     selected = sorted(selected)[:2]
     answer = " ".join(_clean_source_attribution(sentence) for _, sentence in selected)
 
-    if re.search(r"\bhow\s+(?:does|do)\s+.*\bhelp\b", response_lower):
+    if re.search(
+        r"\b(?:(?:tell|explain)\s+me(?:\s+more)?|could you explain)\b",
+        response_lower,
+    ):
+        informative = [
+            _clean_source_attribution(sentence)
+            for sentence in sentences[:2]
+        ]
+        answer = " ".join(informative)
+
+    if benefit_request:
         benefit_sentences = [
             _clean_source_attribution(sentence)
             for sentence in sentences
@@ -884,7 +1444,7 @@ def concise_source_answer(
         if benefit_sentences:
             answer = " ".join(benefit_sentences[:1])
 
-    if re.search(r"\b(?:include|includes|including)\s+swimming\b", response_lower):
+    if re.search(r"\b(?:include|includes|including)\s+swimming\b|\bswimming\s+(?:one|among)\b", response_lower):
         if "swimming" in content.lower():
             answer = "Swimming is listed among the school’s sports facilities."
 
@@ -898,18 +1458,26 @@ def concise_source_answer(
             focused = comparison.group(1).strip(" ,")
             answer = focused[0].upper() + focused[1:] + "."
 
+    direct_question = correct_query_typos(re.sub(
+        r"^\s*(?:(?:hello|hi|thanks|thank you|okay|ok|great)[!. ,]*)+",
+        "",
+        response_question,
+        flags=re.IGNORECASE,
+    ))
     asks_yes_no = bool(
         re.match(
-            r"\s*(?:does|do|did|is|are|was|were|can|could|will|would|has|have)\b",
-            response_question,
+            r"\s*(?:does|do|did|is|are|was|were|can|could|will|would|has|have|may)\b",
+            direct_question,
             flags=re.IGNORECASE,
         )
     )
+    if re.match(r"\s*(?:can|could|would)\s+you\s+(?:tell|explain|describe|show)\b", direct_question, re.I):
+        asks_yes_no = False
     if asks_yes_no and not re.match(r"\s*(?:yes|no)\b", answer, flags=re.IGNORECASE):
         negative = bool(
             re.search(
                 r"\b(?:does not|do not|is not|are not|no entrance test|not available|"
-                r"doesn't|don't|isn't|aren't)\b",
+                r"doesn't|don't|isn't|aren't|not compulsory|not mandatory)\b",
                 answer,
                 flags=re.IGNORECASE,
             )
@@ -955,7 +1523,8 @@ def extractive_fast_answer(
     # of invoking generation.
     current_question = response_question or question
     if re.search(
-        r"\bhow\s+(?:does|do)\s+.*\bhelp\b",
+        r"\b(?:how\s+(?:does|do)\s+.*\bhelp|what\s+(?:abilities|skills|benefits)|"
+        r"explain.*benefits?|benefits?.*simply)\b",
         current_question,
         flags=re.IGNORECASE,
     ) and re.search(
@@ -964,6 +1533,18 @@ def extractive_fast_answer(
         content,
         flags=re.IGNORECASE,
     ):
+        return concise_source_answer(current_question, question, content)
+
+    # Exact fact selectors are safe to answer without generation when the
+    # selected published passage explicitly contains the requested fact.
+    focused_fact = bool(
+        (re.search(r"\bsubjects?\b", current_question, re.I) and re.search(r"\b(?:english|mathematics|computer applications|learning areas)\b", content, re.I))
+        or (re.search(r"\b(?:book|booking)\b", current_question, re.I) and re.search(r"\bbooked in advance\b", content, re.I))
+        or (re.search(r"\bwhere\b", current_question, re.I) and re.search(r"\b(?:rayasandra|bengaluru|karnataka)\b", content, re.I))
+        or (re.search(r"\b(?:suit|fit|better)\b", current_question, re.I) and re.search(r"\b(?:language-rich|nationally portable|mathematics and science)\b", content, re.I))
+        or (re.search(r"\b(?:jee|neet|cuet)\b", current_question, re.I) and re.search(r"\b(?:jee|neet|cuet)\b", content, re.I))
+    )
+    if focused_fact:
         return concise_source_answer(current_question, question, content)
     searchable_text = f"{top.entry.title} {top.entry.content}"
     lexical_coverage = expanded_keyword_score(question, searchable_text)
@@ -982,6 +1563,7 @@ def extractive_fast_answer(
         and lexical_coverage < 0.60
         and synonym_match < 1.0
         and not deterministic_typo_match
+        and not getattr(top, "evidence_supported", False)
     ):
         title_coverage = meaningful_keyword_score(question, top.entry.title)
         contextual_followup = bool(
@@ -1002,6 +1584,22 @@ def extractive_fast_answer(
         question,
         content,
     )
+
+
+def grade_specific_age_is_missing(question: str, hits) -> bool:
+    """Prevent a broad age band from masquerading as a grade-specific cutoff."""
+
+    grade = re.search(r"\b(?:grade|class)\s*(\d{1,2})\b", question, re.I)
+    asks_age = re.search(r"\b(?:age|old|birth|dob|eligib)\w*\b", question, re.I)
+    if not grade or not asks_age or not hits:
+        return False
+    grade_number = grade.group(1)
+    grade_age_fact = re.compile(
+        rf"\b(?:grade|class)\s*{re.escape(grade_number)}\b[^.]*"
+        r"\b(?:age|years? old|born|date of birth|dob)\b",
+        re.I,
+    )
+    return not any(grade_age_fact.search(hit.entry.content) for hit in hits)
 
 CALLBACK_SUGGESTION = (
     "Thank you for your enquiry. The school team is verifying the requested information "
@@ -1192,9 +1790,9 @@ class ChatService:
             return ChatResponse(
                 conversation_id=conversation_id,
                 answer=(
-                    "I don’t have approved information confirming that statement. "
-                    "Please ask without assuming it is true, or contact the school "
-                    "for confirmation."
+                    "I don’t have approved information indicating that statement is "
+                    "true. Please contact the school if you would like confirmation "
+                    "about the relevant admission eligibility."
                 ),
                 outcome="answered",
                 confidence=0.0,
@@ -1218,14 +1816,30 @@ class ChatService:
                 confidence=1.0,
             )
 
-        supplied_pickup_area = transport_location_continuation(
+        continued_pickup_area = transport_location_continuation(
             request.message,
             request.history,
         )
-        if supplied_pickup_area:
+        if not continued_pickup_area and supplied_pickup_area(request.message):
+            recent_user_context = correct_query_typos(" ".join(
+                item.content
+                for item in request.history[-8:]
+                if str(item.role).lower().endswith("user")
+            ))
+            if re.search(
+                r"\b(?:bus|transport|route|pickup|pick-up)\b",
+                recent_user_context,
+                flags=re.IGNORECASE,
+            ) and re.search(
+                r"\b(?:pick up|pickup|pick-up|pick|cover|serve|come)\b",
+                correct_query_typos(request.message),
+                flags=re.IGNORECASE,
+            ):
+                continued_pickup_area = supplied_pickup_area(request.message)
+        if continued_pickup_area:
             contextual_ticket = escalation_question(
                 "Does the school transport route cover this pickup area?",
-                {**request.context, "pickup_area": supplied_pickup_area},
+                {**request.context, "pickup_area": continued_pickup_area},
                 request.history,
             )
             unanswered = self.unanswered.create(
@@ -1234,7 +1848,13 @@ class ChatService:
             )
             return ChatResponse(
                 conversation_id=conversation_id,
-                answer=ESCALATION_MESSAGE,
+                answer=(
+                    "I don’t have approved route coverage information for "
+                    f"{continued_pickup_area}. I’ve sent the location and your "
+                    "question to the school team for confirmation. You may add "
+                    "your email below if you would like to receive their answer "
+                    "directly."
+                ),
                 outcome="escalated",
                 confidence=0.0,
                 unanswered_id=unanswered.id,
@@ -1251,9 +1871,41 @@ class ChatService:
                 confidence=0.0,
             )
 
+        # Broad coverage is live, route-dependent information. Resolve it with
+        # conversation history before the generic dynamic-information gate so
+        # the family receives a useful, contextual escalation rather than the
+        # unrelated fallback message.
+        early_retrieval_context = resolve_contextual_question(
+            contextual_question,
+            request.history,
+        )
+        if is_broad_transport_coverage_question(early_retrieval_context):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=(
+                    "Not necessarily. Transport coverage depends on route feasibility, "
+                    "timings and availability for the family’s location. I’ve sent your "
+                    "question to the school team so they can confirm the applicable route."
+                ),
+                outcome="escalated",
+                confidence=0.0,
+                unanswered_id=unanswered.id,
+            )
+
+        if is_dynamic_operational_question(scope_question):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=ESCALATION_MESSAGE,
+                outcome="escalated",
+                confidence=0.0,
+                unanswered_id=unanswered.id,
+            )
+
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
-        retrieval_context = followup_retrieval_query(
+        retrieval_context = resolve_contextual_question(
             contextual_question,
             request.history,
         )
@@ -1278,6 +1930,16 @@ class ChatService:
             hits,
             self.min_score,
         )
+        hits = prioritize_whole_child_learning(
+            retrieval_context,
+            hits,
+            self.min_score,
+        )
+        hits = prioritize_requested_fact(
+            retrieval_context,
+            hits,
+            self.min_score,
+        )
         predictable_missing_details = deterministic_missing_details(
             retrieval_context,
             request.context,
@@ -1292,14 +1954,35 @@ class ChatService:
                 clarification_kind="details",
                 required_details=predictable_missing_details,
             )
+        if is_broad_transport_coverage_question(retrieval_context):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=(
+                    "Not necessarily. Transport coverage depends on route feasibility, "
+                    "timings and availability for the family’s location. I’ve sent your "
+                    "question to the school team so they can confirm the applicable route."
+                ),
+                outcome="escalated",
+                confidence=hits[0].score if hits else 0.0,
+                unanswered_id=unanswered.id,
+            )
         if (
             is_specific_transport_coverage_request(request.message)
             and detail_is_already_supplied(request.message, "pickup_area")
         ):
+            pickup_area = supplied_pickup_area(request.message)
             unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
-                answer=ESCALATION_MESSAGE,
+                answer=(
+                    "I don’t have approved route coverage information for "
+                    f"{pickup_area}. I’ve sent the location and your question to "
+                    "the school team for confirmation. You may add your email "
+                    "below if you would like to receive their answer directly."
+                    if pickup_area
+                    else ESCALATION_MESSAGE
+                ),
                 outcome="escalated",
                 confidence=0.0,
                 unanswered_id=unanswered.id,
@@ -1350,7 +2033,7 @@ class ChatService:
                 required_details=missing_details[:4],
             )
 
-        retrieval_parts = [understanding.normalized_question]
+        retrieval_parts = [retrieval_context if followup else understanding.normalized_question]
         if understanding.intent and understanding.intent != "general_school_enquiry":
             retrieval_parts.append(understanding.intent.replace("_", " "))
         retrieval_parts.extend(fact.replace("_", " ") for fact in understanding.requested_facts)
@@ -1377,6 +2060,16 @@ class ChatService:
                 hits,
                 self.min_score,
             )
+            hits = prioritize_whole_child_learning(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
+            hits = prioritize_requested_fact(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
 
         if not hits or (
             hits[0].score < self.min_score and not hits[0].evidence_supported
@@ -1397,7 +2090,11 @@ class ChatService:
             # A clear English question can still miss the strict answer threshold.
             # When a semantically related approved topic exists, offer that topic
             # instead of immediately creating an unanswered ticket.
-            if candidates and not is_clear_missing_information(retrieval_question):
+            if (
+                candidates
+                and not is_clear_missing_information(retrieval_question)
+                and not is_clear_unsupported_school_requirement(retrieval_question)
+            ):
                 options = list(
                     dict.fromkeys(canonical_question(hit.entry.title) for hit in candidates)
                 )[:3]
@@ -1412,9 +2109,19 @@ class ChatService:
                         clarification_kind="choice",
                     )
             unanswered = self.unanswered.create(request.school_id, ticket_question)
+            escalation_answer = (
+                "Not necessarily. Transport coverage depends on route feasibility, "
+                "timings and availability for the family’s location. I’ve sent your "
+                "question to the school team so they can confirm the applicable route."
+                if (
+                    is_broad_transport_coverage_question(retrieval_context)
+                    or is_broad_transport_coverage_question(retrieval_question)
+                )
+                else ESCALATION_MESSAGE
+            )
             return ChatResponse(
                 conversation_id=conversation_id,
-                answer=ESCALATION_MESSAGE,
+                answer=escalation_answer,
                 outcome="escalated",
                 confidence=hits[0].score if hits else 0.0,
                 unanswered_id=unanswered.id,
@@ -1427,7 +2134,24 @@ class ChatService:
             for hit in hits
             if hit.score >= self.min_score or hit.evidence_supported
         ]
-        answer_question = understanding.normalized_question if followup else contextual_question
+        # Use the deterministic standalone form for follow-ups. Model-normalized
+        # text may omit a board, grade, location, or pending detail from history.
+        answer_question = retrieval_context if followup else contextual_question
+
+        if grade_specific_age_is_missing(retrieval_context, approved_hits):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=(
+                    "I don’t have an approved grade-specific age cutoff for this "
+                    "enquiry. I’ve sent the grade and your question to the school "
+                    "team for confirmation. You may add your email below if you "
+                    "would like to receive their answer directly."
+                ),
+                outcome="escalated",
+                confidence=approved_hits[0].score if approved_hits else 0.0,
+                unanswered_id=unanswered.id,
+            )
 
         # Strong single-source matches are safest and fastest when returned
         # extractively.  The text is already published school knowledge, so this

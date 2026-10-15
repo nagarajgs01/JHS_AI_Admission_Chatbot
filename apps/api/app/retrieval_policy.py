@@ -32,6 +32,9 @@ DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "transportation": ("transport", "bus", "route", "pickup", "drop-off"),
     "syllabus": ("curriculum", "board", "CBSE", "ICSE"),
     "curriculum": ("syllabus", "board", "CBSE", "ICSE"),
+    "learn": ("learning", "teaching", "education"),
+    "benefit": ("skills", "development", "learning outcomes"),
+    "ability": ("skills", "development", "learning outcomes"),
 }
 
 DOMAIN_VOCABULARY = {
@@ -41,7 +44,8 @@ DOMAIN_VOCABULARY = {
     "music", "option", "play", "playing", "school", "sports", "study", "syllabus", "swimming",
     "transport", "transportation", "bus", "buses", "route", "yoga",
     "apply", "chairman", "facility", "facilities", "state", "city",
-    "karnataka", "bengaluru", "rayasandra", "country",
+    "karnataka", "bengaluru", "rayasandra", "country", "learn", "learning",
+    "children", "kids", "benefit", "benefits", "ability", "abilities", "skills",
 }
 
 COMMON_CHAT_NORMALIZATIONS = {
@@ -49,6 +53,14 @@ COMMON_CHAT_NORMALIZATIONS = {
     "ur": "your",
     "hw": "how",
     "hav": "have",
+    "kidz": "children",
+    "lern": "learn",
+    "thru": "through",
+    "du": "do",
+    "wil": "will",
+    "pik": "pick",
+    "childrn": "children",
+    "plaing": "playing",
 }
 
 
