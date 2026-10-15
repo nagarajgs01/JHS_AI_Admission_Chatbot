@@ -1719,3 +1719,55 @@ def test_visit_booking_method_returns_approved_action_and_phone_number():
 
     assert "+91 96630 21118" in answer
     assert "arrange a visit" in answer
+
+
+def test_school_opening_time_phrases_use_contact_hours_intent():
+    expected = "What are the published school office and campus opening hours?"
+
+    assert resolve_contextual_question("What is the school timing?", []) == expected
+    assert resolve_contextual_question("What time does school open?", []) == expected
+    assert resolve_contextual_question("School opening hours", []) == expected
+
+
+def test_opening_time_answer_selects_hours_not_open_admissions():
+    content = (
+        "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM. "
+        "Campus visits should be booked in advance."
+    )
+
+    answer = concise_source_answer(
+        "What time does school open?",
+        "What are the published school office and campus opening hours?",
+        content,
+    )
+
+    assert answer == "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM."
+
+
+def test_opening_hours_entry_outranks_open_admissions_session():
+    admissions = KnowledgeEntry(
+        school_id="school-a",
+        title="Published admissions session",
+        content="Admissions are open for the next academic session.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hours = KnowledgeEntry(
+        school_id="school-a",
+        title="Contact hours and visit booking",
+        content="Office hours are Monday to Saturday, 9:00 AM to 5:00 PM.",
+        source_label="Approved contact page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=admissions, score=0.70),
+        SimpleNamespace(entry=hours, score=0.40),
+    ]
+
+    ranked = prioritize_requested_fact(
+        "What are the published school office and campus opening hours?",
+        hits,
+        0.38,
+    )
+
+    assert ranked[0].entry.title == "Contact hours and visit booking"

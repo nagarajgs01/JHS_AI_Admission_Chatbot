@@ -208,6 +208,15 @@ def resolve_contextual_question(question: str, history) -> str:
     lowered = current.lower()
 
     if re.search(
+        r"\b(?:what|which)\s+(?:is|are)\s+(?:the\s+)?(?:school|office|campus)\s+"
+        r"(?:time|timing|timings|hours)\b|"
+        r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
+        lowered,
+    ):
+        return "What are the published school office and campus opening hours?"
+
+    if re.search(
         r"\b(?:contact|reach|call|phone|telephone|email|e-mail)\b",
         lowered,
     ) or re.search(
@@ -1065,6 +1074,18 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
                 re.compile(r"monday.*saturday|office hours", re.I | re.S),
             )
         )
+    if re.search(
+        r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
+        lowered,
+    ):
+        requirements.insert(
+            0,
+            (
+                re.compile(r"contact hours|office hours", re.I),
+                re.compile(r"office hours.*monday.*saturday", re.I | re.S),
+            ),
+        )
     if re.search(r"\b(?:where|located|location|address|state|city)\b", lowered):
         requirements.append((re.compile(r"location|contact details", re.I), re.compile(r"rayasandra|bengaluru|karnataka|located", re.I)))
     if "icse" in lowered and re.search(r"\b(?:subject|include|learning area)\w*\b", lowered):
@@ -1225,6 +1246,22 @@ def concise_source_answer(
         )
         if office_days:
             return office_days
+
+    if re.search(
+        r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
+        f"{response_lower} {evidence_lower}",
+    ):
+        office_hours = next(
+            (
+                _clean_source_attribution(sentence)
+                for sentence in sentences
+                if re.search(r"\boffice hours\b.*\bmonday\b.*\bsaturday\b", sentence, re.I)
+            ),
+            None,
+        )
+        if office_hours:
+            return office_hours
 
     benefit_request = bool(re.search(
         r"\b(?:how\s+(?:does|do)\s+.*\bhelp|what\s+(?:abilities|skills|benefits)|"
