@@ -15,6 +15,7 @@ from app.models import (
 from app.retrieval import InMemoryKnowledgeRepository
 from app.service import (
     ChatService,
+    concise_source_answer,
     ESCALATION_MESSAGE,
     UnansweredRepository,
     contextualize_with_history,
@@ -425,6 +426,57 @@ def test_negative_fast_answer_leads_with_no_when_source_explicitly_negates():
     )
 
     assert answer == "No. The school does not publish a rank order for children."
+
+
+def test_provider_followup_leads_with_the_requested_provider():
+    content = (
+        "Meals are designed by qualified dieticians and cooked on campus. "
+        "Meals are optional for Pre-Primary. "
+        "The official brochure identifies Sodexo as the meal-service partner."
+    )
+
+    answer = concise_source_answer(
+        "Who provides them?",
+        "Does the school provide meals? Who provides them?",
+        content,
+    )
+
+    assert "Sodexo" in answer
+    assert "optional for Pre-Primary" not in answer
+
+
+def test_visit_time_answer_removes_unrelated_email_response_detail():
+    content = (
+        "The Contact page publishes office hours as Monday to Saturday, "
+        "9:00 AM to 5:00 PM, and says email replies are normally made within "
+        "one working day. Campus visits should be booked in advance."
+    )
+
+    answer = concise_source_answer(
+        "What time can we come?",
+        "Can parents visit the campus? What time can we come?",
+        content,
+    )
+
+    assert answer.startswith("Office hours are Monday to Saturday, 9:00 AM to 5:00 PM")
+    assert "email replies" not in answer
+
+
+def test_language_fit_answer_leads_with_icse_fact():
+    content = (
+        "The school presents CBSE and ICSE as equal pathways. "
+        "Its guidance describes CBSE as structured and nationally portable, "
+        "while ICSE is described as broad, language-rich and analytically focused."
+    )
+
+    answer = concise_source_answer(
+        "Which one may suit a child who enjoys languages?",
+        "Which boards are offered? Which one may suit a child who enjoys languages?",
+        content,
+    )
+
+    assert answer.startswith("ICSE is described as")
+    assert "language-rich" in answer
 
 
 @pytest.mark.parametrize(
