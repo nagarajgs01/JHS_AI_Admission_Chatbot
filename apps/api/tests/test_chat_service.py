@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.llm import EvidenceOnlyModel
+from app.llm import EvidenceOnlyModel, without_thinking
 from app.models import (
     ChatHistoryMessage,
     ChatRequest,
@@ -86,6 +86,18 @@ class RedundantMissingGradeModel(EvidenceOnlyModel):
             requested_facts=["teacher"],
             missing_details=["grade"],
         )
+
+
+def test_no_think_directive_is_added_without_mutating_messages():
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "question"},
+    ]
+
+    updated = without_thinking(messages)
+
+    assert updated[-1]["content"] == "question\n/no_think"
+    assert messages[-1]["content"] == "question"
 
 
 def test_normal_word_forms_do_not_trigger_typo_understanding_path():
@@ -225,6 +237,8 @@ def test_approved_meal_match_uses_fast_path_at_half_score():
     [
         ("Hello!", "Welcome"),
         ("How are you?", "doing well"),
+        ("Hello, how are you?", "doing well"),
+        ("Hi, hope you are doing well", "doing well"),
         ("Thank you", "welcome"),
         ("Goodbye", "Goodbye"),
     ],
@@ -235,6 +249,7 @@ def test_pure_social_messages_get_friendly_responses(message, expected_text):
 
 def test_mixed_greeting_and_school_question_is_not_consumed_as_small_talk():
     assert social_response("Hi, what are the school fees?") is None
+    assert social_response("Hello, how are you, and what are the fees?") is None
 
 
 @pytest.mark.asyncio

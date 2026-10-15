@@ -63,15 +63,30 @@ def social_response(message: str) -> str | None:
 
     cleaned = re.sub(r"[^a-z0-9'\s]", " ", message.lower())
     cleaned = " ".join(cleaned.split())
-    if re.fullmatch(
+    greeting = (
         r"(?:hi|hii+|hey|hello|hello there|hi there|good morning|good afternoon|"
-        r"good evening|greetings)(?: (?:sir|madam|ma'am|team|there))?",
+        r"good evening|greetings)(?: (?:sir|madam|ma'am|team|there))?"
+    )
+    wellbeing = (
+        r"(?:how are you|how are you doing|how is it going|how's it going|"
+        r"hope you are well|hope you are doing well)"
+    )
+
+    # Treat combinations made entirely from social phrases as social turns too.
+    # This remains deliberately full-message matched, so a school question such
+    # as "Hello, how are you, and what are the fees?" is not swallowed here.
+    if re.fullmatch(
+        rf"(?:{greeting})(?: (?:and )?(?:{wellbeing}))",
+        cleaned,
+    ):
+        return SOCIAL_RESPONSES["wellbeing"]
+    if re.fullmatch(
+        greeting,
         cleaned,
     ):
         return SOCIAL_RESPONSES["greeting"]
     if re.fullmatch(
-        r"(?:how are you|how are you doing|how is it going|how's it going|"
-        r"hope you are well|hope you are doing well)",
+        wellbeing,
         cleaned,
     ):
         return SOCIAL_RESPONSES["wellbeing"]

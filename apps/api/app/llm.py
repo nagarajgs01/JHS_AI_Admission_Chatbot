@@ -138,6 +138,22 @@ def build_suggestion_messages(
     ]
 
 
+def without_thinking(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Disable Qwen reasoning even on Ollama versions that ignore ``think``.
+
+    ``think: false`` remains in the request payload, while the model-native
+    ``/no_think`` directive provides a compatible second guard.  Work on a copy
+    so callers' prompt lists are never mutated.
+    """
+
+    copied = [message.copy() for message in messages]
+    for message in reversed(copied):
+        if message.get("role") == "user":
+            message["content"] = f'{message.get("content", "").rstrip()}\n/no_think'
+            break
+    return copied
+
+
 def parse_suggestions(content: str) -> list[str]:
     cleaned = content.strip()
     if cleaned.startswith("```"):
@@ -242,10 +258,10 @@ class OllamaModel(LocalHTTPModel):
     async def understand(self, question: str) -> QueryUnderstanding:
         payload = {
             "model": self.model,
-            "messages": [
+            "messages": without_thinking([
                 {"role": "system", "content": UNDERSTANDING_PROMPT},
                 {"role": "user", "content": question},
-            ],
+            ]),
             "stream": False,
             "think": False,
             "format": "json",
@@ -260,7 +276,7 @@ class OllamaModel(LocalHTTPModel):
     async def answer(self, question: str, evidence: list[SearchHit]) -> str:
         payload = {
             "model": self.model,
-            "messages": build_messages(question, evidence),
+            "messages": without_thinking(build_messages(question, evidence)),
             "stream": False,
             "think": False,
             "keep_alive": "2h",
@@ -272,7 +288,9 @@ class OllamaModel(LocalHTTPModel):
     async def verify(self, question: str, answer: str, evidence: list[SearchHit]) -> bool:
         payload = {
             "model": self.model,
-            "messages": build_verification_messages(question, answer, evidence),
+            "messages": without_thinking(
+                build_verification_messages(question, answer, evidence)
+            ),
             "stream": False,
             "think": False,
             "keep_alive": "2h",
@@ -284,7 +302,9 @@ class OllamaModel(LocalHTTPModel):
     async def suggest(self, question: str, evidence: list[SearchHit]) -> list[str]:
         payload = {
             "model": self.model,
-            "messages": build_suggestion_messages(question, evidence),
+            "messages": without_thinking(
+                build_suggestion_messages(question, evidence)
+            ),
             "stream": False,
             "think": False,
             "format": "json",
