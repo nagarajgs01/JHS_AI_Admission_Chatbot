@@ -46,6 +46,8 @@ DOMAIN_VOCABULARY = {
     "apply", "chairman", "facility", "facilities", "state", "city",
     "karnataka", "bengaluru", "rayasandra", "country", "learn", "learning",
     "children", "kids", "benefit", "benefits", "ability", "abilities", "skills",
+    "start", "starting", "begin", "parent", "parents", "conduct", "interaction",
+    "near", "silk",
 }
 
 COMMON_CHAT_NORMALIZATIONS = {
@@ -158,7 +160,11 @@ def correct_query_typos(query: str) -> str:
             return preserve_case(closest)
         return original
 
-    return TOKEN_RE.sub(replace, corrected_query)
+    # TOKEN_RE is optimized for already-lowercased retrieval text. Using it on
+    # the original mixed-case question can match only the lowercase tail of a
+    # title-cased word (for example, ``oard`` in ``Board``), producing duplicated
+    # initials such as ``Bboard``. Tokenize complete mixed-case words here.
+    return re.sub(r"\b[A-Za-z][A-Za-z'-]*\b", replace, corrected_query)
 
 
 def expand_query(query: str) -> str:

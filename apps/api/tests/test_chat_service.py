@@ -1548,3 +1548,70 @@ def test_final_intent_categories_generalize_across_wording():
         "The official brochure identifies Sodexo as the meal-service partner.",
     )
     assert is_obviously_out_of_scope("Write JavaScript code to sort an array.")
+
+
+def test_common_words_and_locality_names_are_not_fuzzy_corrupted():
+    assert correct_query_typos(
+        "How can a parent start an application?"
+    ) == "How can a parent start an application?"
+    assert correct_query_typos(
+        "Wil it pik my kid near Silk Board?"
+    ) == "Will it pick my kid near Silk Board?"
+
+
+def test_admission_start_and_interaction_followup_use_canonical_intents():
+    assert resolve_contextual_question(
+        "How can a parent start an application?", []
+    ) == (
+        "How can parents start the admission process by enquiring, visiting "
+        "the campus and completing an application?"
+    )
+
+    history = [
+        ChatHistoryMessage(
+            role="user",
+            content="Will my Nursery child have an entrance examination?",
+        ),
+        ChatHistoryMessage(
+            role="assistant",
+            content="There is an age-appropriate interaction instead.",
+        ),
+    ]
+    resolved = resolve_contextual_question(
+        "Why do they conduct that interaction?", history
+    )
+    assert "Pre-Primary admission interaction" in resolved
+    assert "understand how the child learns" in resolved
+
+
+def test_admission_start_prefers_complete_process_over_visit_contact_entry():
+    process = KnowledgeEntry(
+        school_id="school-a",
+        title="Admission process",
+        content=(
+            "The admission process starts when families enquire online; visit the "
+            "campus; complete the application; then attend an interaction."
+        ),
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    visit = KnowledgeEntry(
+        school_id="school-a",
+        title="Contact hours and visit booking",
+        content="Campus visits should be booked in advance.",
+        source_label="Approved contact page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=visit, score=0.62),
+        SimpleNamespace(entry=process, score=0.50),
+    ]
+    question = (
+        "How can parents start the admission process by enquiring, visiting "
+        "the campus and completing an application?"
+    )
+
+    ranked = prioritize_campus_visit(question, hits, 0.38)
+    ranked = prioritize_requested_fact(question, ranked, 0.38)
+
+    assert ranked[0].entry.title == "Admission process"

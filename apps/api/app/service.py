@@ -221,6 +221,13 @@ def resolve_contextual_question(question: str, history) -> str:
         lowered,
     ):
         return "Can parents visit the campus, and should the visit be booked in advance?"
+    if re.search(r"\b(?:apply|application)\b", lowered) and re.search(
+        r"\b(?:start|begin|how|first|initial)\b", lowered
+    ):
+        return (
+            "How can parents start the admission process by enquiring, visiting "
+            "the campus and completing an application?"
+        )
 
     if not history:
         return current
@@ -230,6 +237,14 @@ def resolve_contextual_question(question: str, history) -> str:
         if str(item.role).lower().endswith("user") and item.content.strip()
     ]
     prior = " ".join(user_turns).lower()
+
+    if re.search(r"\b(?:why|purpose|reason).*(?:interaction)|conduct.*interaction\b", lowered) and re.search(
+        r"\b(?:pre-primary|nursery|entrance|admission interaction)\b", prior
+    ):
+        return (
+            "Why does the school conduct the Pre-Primary admission interaction, "
+            "and how does it help understand how the child learns?"
+        )
 
     if re.search(r"\b(?:assess|assessment|evaluate|evaluation|exam|examination|rank|ranking)\w*\b", lowered):
         if re.search(r"\b(?:rank|ranking|ranked|against each other)\b", lowered):
@@ -750,6 +765,7 @@ def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
         top.score >= 0.50
         or lexical_coverage >= 0.60
         or synonym_match == 1.0
+        or getattr(top, "evidence_supported", False)
     )
 
 
@@ -914,6 +930,13 @@ def prioritize_campus_visit(question: str, hits, minimum_score: float):
     if not hits:
         return hits
     lowered = question.lower()
+    # A campus visit may be one step inside the admission process. Do not let
+    # the visit/contact entry replace the full process entry when the parent is
+    # asking how to begin or complete an application.
+    if re.search(r"\b(?:admission|application|apply|enquir)\w*\b", lowered) and re.search(
+        r"\b(?:start|begin|process|apply|complete)\w*\b", lowered
+    ):
+        return hits
     if not re.search(
         r"\b(?:visit|visiting|tour|appointment|come|coming|book|booking)\b",
         lowered,
@@ -993,6 +1016,15 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
         requirements.append((re.compile(r"meal", re.I), re.compile(r"allerg|dietary", re.I)))
     if re.search(r"\bgrade\s*12\b|\bextend\b|\bgrow\b", lowered):
         requirements.append((re.compile(r"grades and curriculum", re.I), re.compile(r"grade 12|reaching grade 12", re.I)))
+    if re.search(r"\b(?:admission|application|apply|enquir)\w*\b", lowered) and re.search(
+        r"\b(?:start|begin|process|apply|complete)\w*\b", lowered
+    ):
+        requirements.append(
+            (
+                re.compile(r"admission process", re.I),
+                re.compile(r"enquir.*visit the campus.*application", re.I | re.S),
+            )
+        )
     if not requirements:
         return hits
 
