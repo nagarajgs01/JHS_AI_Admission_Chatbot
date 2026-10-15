@@ -19,6 +19,7 @@ from app.service import (
     UnansweredRepository,
     contextualize_with_history,
     detail_is_already_supplied,
+    deterministic_missing_details,
     escalation_question,
     expanded_keyword_score,
     extractive_fast_answer,
@@ -128,6 +129,16 @@ def test_structured_detail_values_are_detected_in_the_question():
     assert not detail_is_already_supplied("Which grades are available?", "grade")
 
 
+def test_transport_location_dependency_is_detected_without_model():
+    assert deterministic_missing_details(
+        "Does the school bus come to my area?", {}
+    ) == ["pickup_area"]
+    assert deterministic_missing_details(
+        "Does the school bus come to my area?", {"pickup_area": "JP Nagar"}
+    ) == []
+    assert deterministic_missing_details("Does the school provide transport?", {}) == []
+
+
 @pytest.mark.asyncio
 async def test_model_cannot_request_a_grade_already_present_in_question():
     unanswered = UnansweredRepository()
@@ -169,6 +180,44 @@ async def test_clear_dynamic_question_skips_llm_understanding_before_escalation(
 
     assert response.outcome == "escalated"
     assert model.understanding_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_transport_location_clarification_skips_llm_understanding():
+    model = CountingEvidenceModel()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        UnansweredRepository(),
+        model,
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Does the school bus come to my area?",
+        )
+    )
+
+    assert response.outcome == "clarification"
+    assert response.required_details == ["pickup_area"]
+    assert model.understanding_calls == 0
+
+
+def test_approved_meal_match_uses_fast_path_at_half_score():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="School meal plan",
+        content="The school provides meals cooked on campus.",
+        source_label="Approved campus page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["meal", "food"],
+    )
+    hits = [SimpleNamespace(entry=entry, score=0.5234)]
+
+    assert extractive_fast_answer(
+        "Does the school provide meals?", hits, 0.38
+    ) == entry.content
 
 
 @pytest.mark.parametrize(

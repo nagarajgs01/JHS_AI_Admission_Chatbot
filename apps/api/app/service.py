@@ -314,6 +314,34 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
     return False
 
 
+def deterministic_missing_details(
+    question: str,
+    context: dict[str, str],
+) -> list[str]:
+    """Resolve predictable dependent enquiries without an LLM round trip."""
+
+    lowered = f" {' '.join(question.lower().split())} "
+    transport_question = bool(
+        re.search(
+            r"\b(?:bus|buses|transport|transportation|route|pickup|pick-up)\b",
+            lowered,
+        )
+    )
+    asks_about_personal_location = bool(
+        re.search(
+            r"\bmy\s+(?:area|location|address)\b|\bnear\s+me\b",
+            lowered,
+        )
+    )
+    supplied_location = any(
+        context.get(key, "").strip()
+        for key in ("pickup_area", "pickup_location", "location", "address")
+    )
+    if transport_question and asks_about_personal_location and not supplied_location:
+        return ["pickup_area"]
+    return []
+
+
 def expanded_keyword_score(question: str, searchable_text: str) -> float:
     """Score original terms and controlled expansion terms without label noise."""
 
@@ -462,7 +490,7 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
         or synonym_match == 1.0
     )
     if (
-        top.score < 0.55
+        top.score < 0.50
         and lexical_coverage < 0.60
         and synonym_match < 1.0
         and not deterministic_typo_match
@@ -674,6 +702,20 @@ class ChatService:
             hits,
             self.min_score,
         )
+        predictable_missing_details = deterministic_missing_details(
+            request.message,
+            request.context,
+        )
+        if predictable_missing_details:
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=DETAILS_CLARIFICATION_MESSAGE,
+                outcome="clarification",
+                confidence=0.0,
+                clarification_question=request.message,
+                clarification_kind="details",
+                required_details=predictable_missing_details,
+            )
         deterministic_typo_match = (
             has_likely_typo(contextual_question)
             and has_strong_approved_hit(
