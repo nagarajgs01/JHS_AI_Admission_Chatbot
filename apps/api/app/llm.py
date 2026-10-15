@@ -309,7 +309,7 @@ class OllamaModel(LocalHTTPModel):
             "think": False,
             "format": "json",
             "keep_alive": "2h",
-            "options": {"temperature": 0.2, "num_predict": 450},
+            "options": {"temperature": 0.2, "num_predict": 180},
         }
         response = await asyncio.to_thread(self._post_json, "/api/chat", payload)
         return parse_suggestions(response["message"]["content"])

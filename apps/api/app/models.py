@@ -133,6 +133,9 @@ class AdminAnswerSuggestion(BaseModel):
     kind: Literal["grounded", "template", "callback"]
     requires_staff_verification: bool = True
     citations: list[Citation] = Field(default_factory=list)
+    confidence: float | None = None
+    confidence_label: Literal["strong", "possible", "none"] = "none"
+    warning: str | None = None
 
 
 class AdminSuggestionResponse(BaseModel):

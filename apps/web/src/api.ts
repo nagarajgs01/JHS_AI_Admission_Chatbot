@@ -104,6 +104,9 @@ export type AdminSuggestion = {
   kind: "grounded" | "template" | "callback";
   requires_staff_verification: boolean;
   citations: Citation[];
+  confidence?: number;
+  confidence_label: "strong" | "possible" | "none";
+  warning?: string;
 };
 
 export type AdminSuggestionResponse = {

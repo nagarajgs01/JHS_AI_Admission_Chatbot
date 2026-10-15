@@ -342,6 +342,13 @@ export function AdminApp() {
                   {suggestions.map((suggestion, index) => (
                     <article className="suggestion-card" key={`${suggestion.kind}-${index}`}>
                       <div><span className={`suggestion-kind ${suggestion.kind}`}>{suggestion.kind}</span><span>Staff verification required</span></div>
+                      {suggestion.confidence_label !== "none" && (
+                        <small className={`suggestion-confidence ${suggestion.confidence_label}`}>
+                          {suggestion.confidence_label === "strong" ? "Strong knowledge match" : "Possible knowledge match"}
+                          {typeof suggestion.confidence === "number" ? ` · ${suggestion.confidence.toFixed(2)}` : ""}
+                        </small>
+                      )}
+                      {suggestion.warning && <p className="suggestion-warning">{suggestion.warning}</p>}
                       <p>{suggestion.answer}</p>
                       {suggestion.citations.map((citation) => <small key={citation.knowledge_id}>Source: {citation.source_label}</small>)}
                       <button type="button" className="secondary-button" onClick={() => { setAnswer(suggestion.answer); setSelectedSources(availableSources); setSupersedeIds([]); }}>Use this draft</button>

@@ -9,7 +9,12 @@ from app.service import AdminSuggestionService, answer_has_placeholders, fill_te
 
 
 class SuggestionModel:
+    def __init__(self):
+        self.suggest_calls = 0
+        self.verify_calls = 0
+
     async def suggest(self, question, evidence):
+        self.suggest_calls += 1
         del question, evidence
         return [
             "Bus transport is available within a 15 km radius.",
@@ -17,6 +22,7 @@ class SuggestionModel:
         ]
 
     async def verify(self, question, answer, evidence):
+        self.verify_calls += 1
         del question, evidence
         return "15 km" in answer
 
@@ -47,10 +53,12 @@ class ConflictingEvidenceRepository:
 
 class SourceAwareSuggestionModel(SuggestionModel):
     async def suggest(self, question, evidence):
+        self.suggest_calls += 1
         del question
         return [evidence[0].entry.content]
 
     async def verify(self, question, answer, evidence):
+        self.verify_calls += 1
         del question
         return answer == evidence[0].entry.content
 
@@ -69,7 +77,8 @@ async def test_only_verified_grounded_suggestions_are_returned():
             )
         ]
     )
-    service = AdminSuggestionService(repository, SuggestionModel(), min_score=0.25)
+    model = SuggestionModel()
+    service = AdminSuggestionService(repository, model, min_score=0.25)
 
     result = await service.generate(
         "school-a",
@@ -81,6 +90,8 @@ async def test_only_verified_grounded_suggestions_are_returned():
     assert len(grounded) == 1
     assert "15 km" in grounded[0].answer
     assert grounded[0].citations[0].source_label == "Transport policy"
+    assert model.suggest_calls == 1
+    assert model.verify_calls == 1
 
 
 @pytest.mark.asyncio
@@ -109,7 +120,7 @@ async def test_missing_evidence_returns_fill_in_template_without_invented_fact()
 
 
 @pytest.mark.asyncio
-async def test_conflicting_sources_are_returned_as_separate_grounded_options():
+async def test_combined_sources_use_one_grounded_draft_with_all_citations():
     service = AdminSuggestionService(
         ConflictingEvidenceRepository(),
         SourceAwareSuggestionModel(),
@@ -123,10 +134,43 @@ async def test_conflicting_sources_are_returned_as_separate_grounded_options():
     )
 
     grounded = [item for item in result.suggestions if item.kind == "grounded"]
-    assert len(grounded) == 2
+    assert len(grounded) == 1
     assert grounded[0].citations[0].source_label == "Handbook A"
-    assert grounded[1].citations[0].source_label == "Circular B"
-    assert grounded[0].answer != grounded[1].answer
+    assert grounded[0].citations[1].source_label == "Circular B"
+
+
+class LowConfidenceRepository:
+    def __init__(self):
+        self.entry = KnowledgeEntry(
+            school_id="school-a",
+            title="Possible transport information",
+            content="Transport availability depends on route feasibility.",
+            source_label="Approved transport note",
+            status=KnowledgeStatus.PUBLISHED,
+        )
+
+    def search(self, school_id, question):
+        del school_id, question
+        return [SearchHit(entry=self.entry, score=0.22)]
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_admin_evidence_is_labeled_for_staff_review():
+    model = SourceAwareSuggestionModel()
+    service = AdminSuggestionService(LowConfidenceRepository(), model, min_score=0.38)
+
+    result = await service.generate(
+        "school-a",
+        uuid4(),
+        "Does transport cover this area?",
+    )
+
+    grounded = next(item for item in result.suggestions if item.kind == "grounded")
+    assert grounded.confidence == 0.22
+    assert grounded.confidence_label == "possible"
+    assert grounded.warning
+    assert model.suggest_calls == 1
+    assert model.verify_calls == 1
 
 
 def test_parent_context_prefills_matching_template_fields_only():

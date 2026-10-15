@@ -168,6 +168,10 @@ button:disabled { opacity: .55; cursor: default; }
 .suggestion-kind.grounded { color: #236143; background: #dff3e6; }
 .suggestion-kind.template { color: #473582; background: #ebe6ff; }
 .suggestion-kind.callback { color: #8a4a19; background: #fff0dc; }
+.suggestion-confidence { font-weight: 700; }
+.suggestion-confidence.strong { color: #236143; }
+.suggestion-confidence.possible { color: #8a4a19; }
+.suggestion-warning { padding: 10px 12px; border-radius: 10px; color: #74400f; background: #fff4df; font-size: .78rem; }
 .answer-editor { margin-top: 25px; color: var(--jhs-navy-800); }
 .placeholder-warning { margin: 9px 0 0; padding: 10px 12px; border-radius: 9px; color: #473582; background: #eeeaff; font-size: .78rem; }
 .review-warning { display: grid; gap: 3px; margin-top: 14px; padding: 13px 15px; border-left: 4px solid #c05835; color: #71513d; background: #fff5ea; font-size: .78rem; }

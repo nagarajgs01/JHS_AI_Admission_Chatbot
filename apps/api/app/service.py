@@ -2486,11 +2486,10 @@ class AdminSuggestionService:
         unanswered_id: UUID,
         question: str,
     ) -> AdminSuggestionResponse:
-        try:
-            understanding = await self.model.understand(question)
-            retrieval_question = understanding.normalized_question
-        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError):
-            retrieval_question = question
+        # Admin suggestions are always reviewed by authorized staff. Search the
+        # question directly instead of spending a model round trip normalizing it.
+        # Retrieval already handles domain synonyms and common spelling errors.
+        retrieval_question = question
 
         hits = self.knowledge.search(school_id, retrieval_question)
         if not hits and hasattr(self.knowledge, "clarification_candidates"):
@@ -2506,53 +2505,52 @@ class AdminSuggestionService:
 
         suggestions: list[AdminAnswerSuggestion] = []
         if approved_hits:
-            seen: set[str] = set()
-            for hit in approved_hits[:3]:
+            evidence = approved_hits[:3]
+            try:
+                candidates = await self.model.suggest(question, evidence)
+            except (KeyError, RuntimeError, TypeError, ValueError):
+                candidates = []
+
+            # One draft and one verification call keep CPU deployments responsive.
+            # Additional safe options are supplied by deterministic templates.
+            candidate = candidates[0] if candidates else None
+            verified = False
+            if candidate:
                 try:
-                    candidates = await self.model.suggest(question, [hit])
+                    verified = await self.model.verify(question, candidate, evidence)
                 except (KeyError, RuntimeError, TypeError, ValueError):
-                    candidates = []
-                citation = Citation(
-                    knowledge_id=hit.entry.id,
-                    title=hit.entry.title,
-                    source_label=hit.entry.source_label,
-                    excerpt=hit.entry.content[:240],
-                    score=hit.score,
+                    verified = False
+            if candidate and verified:
+                top_score = evidence[0].score
+                confidence_label = "strong" if top_score >= self.min_score else "possible"
+                warning = (
+                    None
+                    if confidence_label == "strong"
+                    else (
+                        "Possible knowledge match only. Confirm every detail against the "
+                        "school’s current information before approval."
+                    )
                 )
-                for candidate in candidates:
-                    normalized = " ".join(candidate.lower().split())
-                    if normalized in seen:
-                        existing = next(
-                            (
-                                item
-                                for item in suggestions
-                                if " ".join(item.answer.lower().split()) == normalized
-                            ),
-                            None,
-                        )
-                        if existing and all(
-                            source.knowledge_id != citation.knowledge_id
-                            for source in existing.citations
-                        ):
-                            existing.citations.append(citation)
-                        continue
-                    try:
-                        verified = await self.model.verify(question, candidate, [hit])
-                    except (KeyError, RuntimeError, TypeError, ValueError):
-                        verified = False
-                    if verified:
-                        seen.add(normalized)
-                        suggestions.append(
-                            AdminAnswerSuggestion(
-                                answer=candidate,
-                                kind="grounded",
-                                citations=[citation],
-                            )
-                        )
-                        if len(suggestions) >= 3:
-                            break
-                if len(suggestions) >= 3:
-                    break
+                citations = [
+                    Citation(
+                        knowledge_id=hit.entry.id,
+                        title=hit.entry.title,
+                        source_label=hit.entry.source_label,
+                        excerpt=hit.entry.content[:240],
+                        score=hit.score,
+                    )
+                    for hit in evidence
+                ]
+                suggestions.append(
+                    AdminAnswerSuggestion(
+                        answer=candidate,
+                        kind="grounded",
+                        citations=citations,
+                        confidence=top_score,
+                        confidence_label=confidence_label,
+                        warning=warning,
+                    )
+                )
 
         for template in answer_templates(question):
             if len(suggestions) >= 3:
@@ -2562,6 +2560,8 @@ class AdminSuggestionService:
                     answer=fill_template_context(template, question),
                     kind="template",
                     requires_staff_verification=True,
+                    confidence_label="none",
+                    warning="Complete and verify all placeholders before approval.",
                 )
             )
 
@@ -2571,6 +2571,7 @@ class AdminSuggestionService:
                     answer=CALLBACK_SUGGESTION,
                     kind="callback",
                     requires_staff_verification=True,
+                    confidence_label="none",
                 )
             )
 
