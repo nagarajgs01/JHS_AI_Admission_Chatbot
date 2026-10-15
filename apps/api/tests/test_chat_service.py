@@ -18,9 +18,11 @@ from app.service import (
     ESCALATION_MESSAGE,
     UnansweredRepository,
     contextualize_with_history,
+    context_acknowledgement,
     detail_is_already_supplied,
     deterministic_missing_details,
     escalation_question,
+    followup_retrieval_query,
     expanded_keyword_score,
     extractive_fast_answer,
     has_strong_approved_hit,
@@ -29,6 +31,7 @@ from app.service import (
     is_specific_transport_coverage_request,
     prioritize_complete_overview,
     prioritize_campus_visit,
+    prioritize_board_guidance,
     prioritize_geographic_location,
     social_response,
 )
@@ -242,6 +245,38 @@ def test_campus_visit_prefers_visit_booking_source():
     assert ranked[0].entry.title == "Contact hours and visit booking"
 
 
+def test_language_fit_followup_prefers_board_guidance():
+    overview = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="The school offers CBSE and ICSE.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    guidance = KnowledgeEntry(
+        school_id="school-a",
+        title="Choosing between CBSE and ICSE",
+        content=(
+            "ICSE is described as language-rich, while counsellors help families "
+            "choose according to the child's strengths and learning style."
+        ),
+        source_label="Approved curriculum pages",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=overview, score=0.60),
+        SimpleNamespace(entry=guidance, score=0.55),
+    ]
+
+    ranked = prioritize_board_guidance(
+        "Which boards are offered? Which one may suit a child who enjoys languages?",
+        hits,
+        0.38,
+    )
+
+    assert ranked[0].entry.title == "Choosing between CBSE and ICSE"
+
+
 @pytest.mark.asyncio
 async def test_model_cannot_request_a_grade_already_present_in_question():
     unanswered = UnansweredRepository()
@@ -344,7 +379,52 @@ def test_approved_meal_match_uses_fast_path_at_half_score():
 
     assert extractive_fast_answer(
         "Does the school provide meals?", hits, 0.38
-    ) == entry.content
+    ) == f"Yes. {entry.content}"
+
+
+def test_yes_no_fast_answer_leads_with_decision_and_relevant_explanation():
+    content = (
+        "Pre-Primary covers Playgroup, Nursery, LKG and UKG. "
+        "The programme uses purposeful play, guided exploration and storytelling. "
+        "Through play, children practise language, cooperation and problem-solving."
+    )
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Early-years learning approach",
+        content=content,
+        source_label="Approved Pre-Primary page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["play", "learning"],
+    )
+
+    answer = extractive_fast_answer(
+        "Do children learn through play?",
+        [SimpleNamespace(entry=entry, score=0.60)],
+        0.38,
+    )
+
+    assert answer.startswith("Yes. ")
+    assert "purposeful play" in answer
+    assert "approximately ages" not in answer
+
+
+def test_negative_fast_answer_leads_with_no_when_source_explicitly_negates():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Learning and assessment",
+        content="The school says it does not publish a rank order for children.",
+        source_label="Approved academics page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["rank", "assessment"],
+    )
+
+    answer = extractive_fast_answer(
+        "Does the school rank children?",
+        [SimpleNamespace(entry=entry, score=0.60)],
+        0.38,
+    )
+
+    assert answer == "No. The school does not publish a rank order for children."
 
 
 @pytest.mark.parametrize(
@@ -404,6 +484,61 @@ def test_natural_short_cost_question_is_a_followup():
     assert "Do you have transportation?" in prompt
 
 
+def test_followup_retrieval_uses_recent_user_topic_without_assistant_as_evidence():
+    history = [
+        ChatHistoryMessage(role="user", content="Does the school provide meals?"),
+        ChatHistoryMessage(role="assistant", content="A prior assistant response."),
+    ]
+
+    query = followup_retrieval_query("Who provides them?", history)
+
+    assert query == "Does the school provide meals? Who provides them?"
+    assert "prior assistant response" not in query.lower()
+
+
+@pytest.mark.asyncio
+async def test_transport_cost_followup_requests_pickup_area_without_model_call():
+    history = [
+        ChatHistoryMessage(role="user", content="Does the school provide transport?"),
+        ChatHistoryMessage(role="assistant", content="Yes, transport is available."),
+    ]
+    model = CountingEvidenceModel()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        UnansweredRepository(),
+        model,
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="How much does it cost?",
+            history=history,
+        )
+    )
+
+    assert response.outcome == "clarification"
+    assert response.required_details == ["pickup_area"]
+    assert model.understanding_calls == 0
+
+
+def test_short_standalone_question_is_not_forced_to_use_old_context():
+    history = [
+        ChatHistoryMessage(role="user", content="Tell me about sports."),
+        ChatHistoryMessage(role="assistant", content="Sports are available."),
+    ]
+
+    assert not is_conversation_followup("What grades are offered?", history)
+
+
+def test_application_context_statement_is_acknowledged_without_ticket():
+    answer = context_acknowledgement("My child is applying for Grade 5.")
+    assert answer is not None
+    assert "what would you like to know" in answer.lower()
+    assert context_acknowledgement("What is the Grade 5 fee?") is None
+
+
 def test_escalated_followup_keeps_context_for_school_staff():
     history = [
         ChatHistoryMessage(role="user", content="Does the school provide transport?"),
@@ -417,7 +552,7 @@ def test_escalated_followup_keeps_context_for_school_staff():
 
 
 @pytest.mark.asyncio
-async def test_followup_is_rewritten_then_grounded_in_approved_evidence():
+async def test_transport_fee_followup_requests_route_detail_before_answering():
     repo = InMemoryKnowledgeRepository(
         [
             KnowledgeEntry(
@@ -441,10 +576,10 @@ async def test_followup_is_rewritten_then_grounded_in_approved_evidence():
             school_id="school-a", message="What about the fee?", history=history
         )
     )
-    assert response.outcome == "answered"
-    assert "Transport fees depend" in response.answer
-    assert "RECENT CONVERSATION" in model.understanding_input
-    assert response.citations[0].source_label == "Approved transport policy"
+    assert response.outcome == "clarification"
+    assert response.required_details == ["pickup_area"]
+    assert model.understanding_input == ""
+    assert response.citations == []
 
 
 @pytest.mark.asyncio
@@ -581,7 +716,7 @@ async def test_strong_direct_evidence_bypasses_generation_safely():
     )
 
     assert response.outcome == "answered"
-    assert response.answer == "Bus transport is available within a 15 km radius."
+    assert response.answer == "Yes. Bus transport is available within a 15 km radius."
     assert response.citations[0].source_label == "Transport policy"
     assert response.unanswered_id is None
     assert model.answer_calls == 0
@@ -648,7 +783,11 @@ def test_strong_hybrid_match_handles_equivalent_word_forms(
     )
     hits = [SimpleNamespace(entry=entry, score=score)]
 
-    assert extractive_fast_answer(question, hits, 0.38) == content
+    answer = extractive_fast_answer(question, hits, 0.38)
+    if question.lower().startswith("do "):
+        assert answer == "Yes. School transport with pick-up and drop is available."
+    else:
+        assert answer == content
 
 
 def test_policy_approved_typo_match_skips_language_model_route():

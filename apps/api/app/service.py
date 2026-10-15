@@ -159,24 +159,61 @@ def is_conversation_followup(question: str, history) -> bool:
         return False
     lowered = " ".join(question.lower().split())
     token_count = len(re.findall(r"[a-z0-9]+", lowered))
-    # Short questions commonly omit the subject established in the prior turn:
-    # "How much does it cost?", "When is it available?", or "Who is the
-    # teacher?". Six tokens covers these natural follow-ups while longer,
-    # self-contained questions continue through the normal fast path.
-    if token_count <= 6:
-        return True
     if re.search(r"\b(it|its|that|this|those|these|they|them|there|same|former|latter)\b", lowered):
+        return True
+    if re.search(
+        r"\b(?:which one|which option|how much|what cost|who provides|"
+        r"what time can (?:we|i)|when can (?:we|i)|how does that)\b",
+        lowered,
+    ):
         return True
     # A definite noun phrase often points back to a grade, programme, route,
     # facility, or process already discussed in the session.
     if token_count <= 8 and re.search(
-        r"\bthe\s+(teacher|fee|fees|cost|price|time|timing|timings|route|bus|"
+        r"\bthe\s+((?:class\s+)?teacher|fee|fees|cost|price|time|timing|timings|route|bus|"
         r"board|curriculum|syllabus|class|grade|campus|visit|process|application|"
         r"facility|facilities|programme|program)\b",
         lowered,
     ):
         return True
     return lowered.startswith(("and ", "also ", "then ", "what about ", "how about "))
+
+
+def followup_retrieval_query(question: str, history) -> str:
+    """Combine recent user turns for retrieval without treating them as evidence."""
+
+    if not is_conversation_followup(question, history):
+        return question
+    recent_user_turns = [
+        item.content.strip()
+        for item in history
+        if item.role == "user" and item.content.strip()
+    ][-2:]
+    return " ".join([*recent_user_turns, question.strip()])
+
+
+def context_acknowledgement(message: str) -> str | None:
+    """Acknowledge parent context statements without creating a staff ticket."""
+
+    cleaned = " ".join(message.strip().split())
+    lowered = cleaned.lower()
+    if "?" in cleaned or re.search(
+        r"^(?:please\s+)?(?:tell me|explain|i want to know|i need to know|"
+        r"what|which|who|when|where|why|how|does|do|is|are|can|could|will)\b",
+        lowered,
+    ):
+        return None
+    family_context = re.search(r"\b(?:my|our)\s+(?:child|son|daughter)\b", lowered)
+    application_context = re.search(
+        r"\b(?:applying|application|interested|considering|seeking admission)\b",
+        lowered,
+    )
+    if family_context and application_context:
+        return (
+            "Thank you for sharing that context. What would you like to know about "
+            "your child’s application?"
+        )
+    return None
 
 
 def contextualize_with_history(question: str, history) -> str:
@@ -387,6 +424,9 @@ def deterministic_missing_details(
             lowered,
         )
     )
+    transport_price_question = transport_question and bool(
+        re.search(r"\b(?:cost|costs|fee|fees|price|charge|charges|much)\b", lowered)
+    )
     asks_about_personal_location = bool(
         re.search(
             r"\bmy\s+(?:area|location|address)\b|\bnear\s+me\b",
@@ -397,7 +437,9 @@ def deterministic_missing_details(
         context.get(key, "").strip()
         for key in ("pickup_area", "pickup_location", "location", "address")
     )
-    if transport_question and asks_about_personal_location and not supplied_location:
+    if transport_question and (
+        asks_about_personal_location or transport_price_question
+    ) and not supplied_location:
         return ["pickup_area"]
     return []
 
@@ -512,6 +554,38 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
     return hits
 
 
+def prioritize_board_guidance(question: str, hits, minimum_score: float):
+    """Prefer comparative board guidance when the family asks about fit."""
+
+    if not hits:
+        return hits
+    lowered = question.lower()
+    terms = typo_tolerant_query_tokens(question)
+    if not terms & {"board", "cbse", "icse", "curriculum", "syllabus"}:
+        return hits
+    if not re.search(
+        r"\b(?:better|choose|choice|suit|fit|compare|comparison|"
+        r"language|languages|strength|strengths|aspiration|aspirations)\b",
+        lowered,
+    ):
+        return hits
+    for index, hit in enumerate(hits):
+        title = hit.entry.title.lower()
+        if hit.score < minimum_score or "choosing between" not in title:
+            continue
+        decision = evaluate_evidence(
+            question,
+            hit.entry.content,
+            hit.score,
+            minimum_score,
+        )
+        if decision.supported:
+            if index:
+                return [hit, *hits[:index], *hits[index + 1:]]
+            return hits
+    return hits
+
+
 def prioritize_geographic_location(question: str, hits, minimum_score: float):
     """Prefer reviewed location evidence for state/city/address questions."""
 
@@ -583,7 +657,88 @@ def prioritize_campus_visit(question: str, hits, minimum_score: float):
     return hits
 
 
-def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
+def _clean_source_attribution(sentence: str) -> str:
+    """Remove source-reporting boilerplate without changing the underlying fact."""
+
+    replacements = (
+        (r"^The school website states that\s+", ""),
+        (r"^The school states that\s+", ""),
+        (r"^The official website states that\s+", ""),
+        (r"^The official website says that\s+", ""),
+        (r"^The brochure says that\s+", ""),
+        (r"^The official brochure states that\s+", ""),
+        (r"^The school says it does not\s+", "The school does not "),
+    )
+    cleaned = sentence.strip()
+    for pattern, replacement in replacements:
+        updated = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+        if updated != cleaned:
+            cleaned = updated
+            break
+    if cleaned:
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
+def concise_source_answer(
+    response_question: str,
+    evidence_question: str,
+    content: str,
+) -> str:
+    """Present approved evidence as a direct, short conversational answer."""
+
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", content.strip())
+        if sentence.strip()
+    ]
+    if not sentences:
+        return content.strip()
+
+    scored = []
+    for index, sentence in enumerate(sentences):
+        score = max(
+            expanded_keyword_score(response_question, sentence),
+            expanded_keyword_score(evidence_question, sentence),
+        )
+        scored.append((score, index, sentence))
+    best_score = max(score for score, _, _ in scored)
+    selected = [
+        (index, sentence)
+        for score, index, sentence in scored
+        if score > 0 and score >= best_score * 0.45
+    ]
+    if not selected:
+        selected = [(0, sentences[0])]
+    selected = sorted(selected)[:2]
+    answer = " ".join(_clean_source_attribution(sentence) for _, sentence in selected)
+
+    asks_yes_no = bool(
+        re.match(
+            r"\s*(?:does|do|did|is|are|was|were|can|could|will|would|has|have)\b",
+            response_question,
+            flags=re.IGNORECASE,
+        )
+    )
+    if asks_yes_no and not re.match(r"\s*(?:yes|no)\b", answer, flags=re.IGNORECASE):
+        negative = bool(
+            re.search(
+                r"\b(?:does not|do not|is not|are not|no entrance test|not available|"
+                r"doesn't|don't|isn't|aren't)\b",
+                answer,
+                flags=re.IGNORECASE,
+            )
+        )
+        answer = f"{'No' if negative else 'Yes'}. {answer}"
+    return answer
+
+
+def extractive_fast_answer(
+    question: str,
+    hits,
+    minimum_score: float,
+    response_question: str | None = None,
+) -> str | None:
     """Return approved source text only when the match is exceptionally direct.
 
     This path performs no language-model generation, so it cannot invent a fact.
@@ -631,7 +786,11 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
             return None
     if not content or len(content) > 700:
         return None
-    return content
+    return concise_source_answer(
+        response_question or question,
+        question,
+        content,
+    )
 
 CALLBACK_SUGGESTION = (
     "Thank you for your enquiry. The school team is verifying the requested information "
@@ -816,6 +975,15 @@ class ChatService:
                 confidence=1.0,
             )
 
+        acknowledgement = context_acknowledgement(request.message)
+        if acknowledgement:
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=acknowledgement,
+                outcome="answered",
+                confidence=1.0,
+            )
+
         # Interpret short continuations together with their recent turn. History
         # helps resolve intent, but it is never passed in as answer evidence.
         scope_question = understanding_question if followup else contextual_question
@@ -829,24 +997,33 @@ class ChatService:
 
         # Try approved hybrid retrieval first. Clear, general questions do not need a
         # separate LLM classification call; this removes one full local-model round trip.
-        hits = [] if followup else self.knowledge.search(request.school_id, contextual_question)
-        hits = prioritize_complete_overview(
+        retrieval_context = followup_retrieval_query(
             contextual_question,
+            request.history,
+        )
+        hits = self.knowledge.search(request.school_id, retrieval_context)
+        hits = prioritize_complete_overview(
+            retrieval_context,
+            hits,
+            self.min_score,
+        )
+        hits = prioritize_board_guidance(
+            retrieval_context,
             hits,
             self.min_score,
         )
         hits = prioritize_geographic_location(
-            contextual_question,
+            retrieval_context,
             hits,
             self.min_score,
         )
         hits = prioritize_campus_visit(
-            contextual_question,
+            retrieval_context,
             hits,
             self.min_score,
         )
         predictable_missing_details = deterministic_missing_details(
-            request.message,
+            retrieval_context,
             request.context,
         )
         if predictable_missing_details:
@@ -872,19 +1049,19 @@ class ChatService:
                 unanswered_id=unanswered.id,
             )
         deterministic_typo_match = (
-            has_likely_typo(contextual_question)
+            has_likely_typo(retrieval_context)
             and has_strong_approved_hit(
-                contextual_question,
+                retrieval_context,
                 hits,
                 self.min_score,
             )
         )
         if deterministic_typo_match or (
-            not needs_contextual_understanding(contextual_question)
+            not needs_contextual_understanding(retrieval_context)
             and (hits or is_clear_missing_information(contextual_question))
         ):
             understanding = QueryUnderstanding(
-                normalized_question=contextual_question,
+                normalized_question=retrieval_context,
                 scope="school",
                 clarity="clear",
             )
@@ -924,6 +1101,11 @@ class ChatService:
         if retrieval_question != contextual_question or not hits:
             hits = self.knowledge.search(request.school_id, retrieval_question)
             hits = prioritize_complete_overview(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
+            hits = prioritize_board_guidance(
                 retrieval_question,
                 hits,
                 self.min_score,
@@ -997,6 +1179,7 @@ class ChatService:
             answer_question,
             approved_hits,
             self.min_score,
+            response_question=request.message,
         )
         if extractive_answer:
             hit = approved_hits[0]
