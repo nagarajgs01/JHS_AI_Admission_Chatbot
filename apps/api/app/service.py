@@ -774,8 +774,47 @@ def concise_source_answer(
     if not sentences:
         return content.strip()
 
-    scored = []
     response_lower = response_question.lower()
+
+    # A process-stage follow-up should continue from the named stage instead of
+    # repeating the complete approved process. The returned clauses remain
+    # verbatim source facts, with only capitalization adjusted.
+    if re.search(r"\bafter\s+(?:the\s+)?campus visit\b", response_lower):
+        clauses = [part.strip(" .") for part in re.split(r"[;]", content) if part.strip()]
+        visit_index = next(
+            (index for index, clause in enumerate(clauses) if "visit the campus" in clause.lower()),
+            None,
+        )
+        if visit_index is not None and visit_index + 1 < len(clauses):
+            following = clauses[visit_index + 1:visit_index + 3]
+            focused = "; then ".join(
+                re.sub(r"^(?:then\s+)", "", clause, flags=re.IGNORECASE)
+                for clause in following
+            )
+            focused = focused[0].upper() + focused[1:]
+            return focused.rstrip(".") + "."
+
+    # Subject-list questions require the approved curriculum enumeration, not
+    # the preceding generic sentence identifying the board.
+    if re.search(
+        r"\b(?:what|which)\s+(?:subjects?|learning areas?)\b|"
+        r"\bsubjects?\s+does\s+.*\binclude\b",
+        response_lower,
+    ):
+        subject_terms = re.compile(
+            r"\b(?:english|language|mathematics|environmental science|science|"
+            r"social studies|computer applications|value education|art|craft|"
+            r"physical education)\b",
+            flags=re.IGNORECASE,
+        )
+        subject_sentences = [
+            sentence for sentence in sentences
+            if len(subject_terms.findall(sentence)) >= 3
+        ]
+        if subject_sentences:
+            return _clean_source_attribution(subject_sentences[0])
+
+    scored = []
     for index, sentence in enumerate(sentences):
         score = max(
             expanded_keyword_score(response_question, sentence),
@@ -909,6 +948,23 @@ def extractive_fast_answer(
     )
     if not decision.supported:
         return None
+
+    # Referential benefit questions can have little lexical overlap on their
+    # own ("How does that help them?"). When the bounded retrieval question and
+    # approved passage clearly contain the benefit, answer extractively instead
+    # of invoking generation.
+    current_question = response_question or question
+    if re.search(
+        r"\bhow\s+(?:does|do)\s+.*\bhelp\b",
+        current_question,
+        flags=re.IGNORECASE,
+    ) and re.search(
+        r"\b(?:practise|practice|develop|skills?|language|motor|cooperation|"
+        r"reasoning|problem-solving|scientific thinking)\b",
+        content,
+        flags=re.IGNORECASE,
+    ):
+        return concise_source_answer(current_question, question, content)
     searchable_text = f"{top.entry.title} {top.entry.content}"
     lexical_coverage = expanded_keyword_score(question, searchable_text)
     synonym_match = synonym_evidence_score(question, searchable_text)
