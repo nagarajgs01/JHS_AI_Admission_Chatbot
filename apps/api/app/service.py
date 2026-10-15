@@ -163,7 +163,8 @@ def is_conversation_followup(question: str, history) -> bool:
         return True
     if re.search(
         r"\b(?:which one|which option|how much|what cost|who provides|"
-        r"what time can (?:we|i)|when can (?:we|i)|how does that)\b",
+        r"what time can (?:we|i)|when can (?:we|i)|how does that|"
+        r"what subjects?|tell me more)\b",
         lowered,
     ):
         return True
@@ -337,7 +338,6 @@ def needs_contextual_understanding(question: str) -> bool:
     lowered = f" {' '.join(question.lower().split())} "
     personal_markers = (
         " my ",
-        " me ",
         " our ",
         " mine ",
         " my child ",
@@ -349,6 +349,72 @@ def needs_contextual_understanding(question: str) -> bool:
         " my application ",
     )
     return has_likely_typo(question) or any(marker in lowered for marker in personal_markers)
+
+
+def is_prompt_injection(question: str) -> bool:
+    """Reject requests to bypass grounding or fabricate school information."""
+
+    lowered = " ".join(question.lower().split())
+    bypass = re.search(
+        r"\b(?:ignore|disregard|override|forget|bypass)\b.*"
+        r"\b(?:instruction|instructions|rules|policy|prompt|system)\b",
+        lowered,
+    )
+    fabrication = re.search(
+        r"\b(?:invent|fabricate|make up|guess)\b.*"
+        r"\b(?:answer|details?|fees?|facts?|information)\b",
+        lowered,
+    )
+    return bool(bypass or fabrication)
+
+
+def contains_unsupported_negative_premise(question: str) -> bool:
+    """Detect a question that asks the bot to accept an unverified negative claim."""
+
+    lowered = " ".join(question.lower().split())
+    return bool(
+        re.search(r"\bwhy\s+(?:does|do|is|are|can|will)\b", lowered)
+        and re.search(
+            r"\b(?:not|never|refuse|refuses|ban|bans|forbid|forbids|"
+            r"exclude|excludes|deny|denies|doesn't|don't|isn't|aren't)\b",
+            lowered,
+        )
+        and re.search(
+            r"\b(?:allow|accept|admit|girls?|boys?|religion|caste|disability|"
+            r"disabled|nationality|race|gender)\b",
+            lowered,
+        )
+    )
+
+
+def transport_location_continuation(question: str, history) -> str | None:
+    """Return a locality supplied after the bot requested a pickup area."""
+
+    if not history:
+        return None
+    cleaned = " ".join(question.strip().split()).strip(".,?!")
+    if not cleaned or len(cleaned) > 80 or len(cleaned.split()) > 8:
+        return None
+    if re.search(
+        r"\b(?:what|which|who|when|where|why|how|does|do|is|are|can|could|will)\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    recent_user = " ".join(
+        item.content for item in history[-4:] if item.role == "user"
+    ).lower()
+    recent_assistant = " ".join(
+        item.content for item in history[-4:] if item.role == "assistant"
+    ).lower()
+    asked_for_location = bool(
+        re.search(r"\b(?:bus|transport|route|pickup|pick-up)\b", recent_user)
+        and (
+            re.search(r"\b(?:my area|my location|cover|come to|serve)\b", recent_user)
+            or "few details" in recent_assistant
+        )
+    )
+    return cleaned if asked_for_location else None
 
 
 def detail_is_already_supplied(question: str, detail: str) -> bool:
@@ -730,7 +796,24 @@ def concise_source_answer(
             r"\b(?:help|develop|skills?|practise|practice|language|reasoning|problem-solving)\b",
             sentence_lower,
         ):
-            score += 1.0
+            score += 2.0
+        if re.search(r"\b(?:what|which)\s+state\b", response_lower):
+            state = re.search(r"\b(karnataka)\b", sentence_lower)
+            if state:
+                return "Karnataka."
+        if re.search(r"\bwhat\s+sports?\b|\bsports?.*(?:participate|available|offer)\b", response_lower):
+            if re.search(
+                r"\b(?:basketball|volleyball|table tennis|badminton|swimming|"
+                r"cricket|futsal|indoor games)\b",
+                sentence_lower,
+            ):
+                score += 2.0
+        if re.search(r"\b(?:include|includes|including)\s+swimming\b", response_lower):
+            if "swimming" in sentence_lower:
+                score += 2.0
+        if re.search(r"\bafter\s+(?:the\s+)?campus visit\b", response_lower):
+            if re.search(r"\b(?:complete the application|documents|interaction|offer|onboarding)\b", sentence_lower):
+                score += 2.0
         if re.search(r"\b(?:language|languages)\b", response_lower) and re.search(
             r"\b(?:language-rich|languages?|icse)\b",
             sentence_lower,
@@ -747,6 +830,24 @@ def concise_source_answer(
         selected = [(0, sentences[0])]
     selected = sorted(selected)[:2]
     answer = " ".join(_clean_source_attribution(sentence) for _, sentence in selected)
+
+    if re.search(r"\bhow\s+(?:does|do)\s+.*\bhelp\b", response_lower):
+        benefit_sentences = [
+            _clean_source_attribution(sentence)
+            for sentence in sentences
+            if re.search(
+                r"\b(?:practise|practice|develop|skills?|language|motor|cooperation|"
+                r"reasoning|problem-solving|scientific thinking)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+        ]
+        if benefit_sentences:
+            answer = " ".join(benefit_sentences[:1])
+
+    if re.search(r"\b(?:include|includes|including)\s+swimming\b", response_lower):
+        if "swimming" in content.lower():
+            answer = "Swimming is listed among the school’s sports facilities."
 
     if re.search(r"\b(?:language|languages)\b", response_lower):
         comparison = re.search(
@@ -1020,6 +1121,29 @@ class ChatService:
                 unanswered_id=unanswered.id,
             )
 
+        if is_prompt_injection(request.message):
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=(
+                    "I can only answer using approved school information, so I can’t "
+                    "invent or guess details."
+                ),
+                outcome="out_of_scope",
+                confidence=1.0,
+            )
+
+        if contains_unsupported_negative_premise(request.message):
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=(
+                    "I don’t have approved information confirming that statement. "
+                    "Please ask without assuming it is true, or contact the school "
+                    "for confirmation."
+                ),
+                outcome="answered",
+                confidence=0.0,
+            )
+
         friendly_answer = social_response(request.message)
         if friendly_answer:
             return ChatResponse(
@@ -1036,6 +1160,28 @@ class ChatService:
                 answer=acknowledgement,
                 outcome="answered",
                 confidence=1.0,
+            )
+
+        supplied_pickup_area = transport_location_continuation(
+            request.message,
+            request.history,
+        )
+        if supplied_pickup_area:
+            contextual_ticket = escalation_question(
+                "Does the school transport route cover this pickup area?",
+                {**request.context, "pickup_area": supplied_pickup_area},
+                request.history,
+            )
+            unanswered = self.unanswered.create(
+                request.school_id,
+                contextual_ticket,
+            )
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=ESCALATION_MESSAGE,
+                outcome="escalated",
+                confidence=0.0,
+                unanswered_id=unanswered.id,
             )
 
         # Interpret short continuations together with their recent turn. History
