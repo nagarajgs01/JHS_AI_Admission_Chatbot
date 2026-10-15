@@ -368,10 +368,11 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
         None,
     )
     if requested_pathway:
+        candidates = []
+        other_pathway = "icse" if requested_pathway == "cbse" else "cbse"
         for index, hit in enumerate(hits):
-            if requested_pathway not in hit.entry.title.lower():
-                continue
-            if hit.score < minimum_score:
+            title = hit.entry.title.lower()
+            if requested_pathway not in title or hit.score < minimum_score:
                 continue
             decision = evaluate_evidence(
                 question,
@@ -379,10 +380,23 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
                 hit.score,
                 minimum_score,
             )
-            if decision.supported and index:
-                return [hit, *hits[:index], *hits[index + 1:]]
             if decision.supported:
-                return hits
+                dedicated_pathway = f"{requested_pathway} pathway" in title
+                excludes_other_pathway = other_pathway not in title
+                candidates.append(
+                    (
+                        dedicated_pathway,
+                        excludes_other_pathway,
+                        hit.score,
+                        index,
+                        hit,
+                    )
+                )
+        if candidates:
+            _, _, _, index, hit = max(candidates)
+            if index:
+                return [hit, *hits[:index], *hits[index + 1:]]
+            return hits
         return hits
     if terms & {"cisce", "ncert"}:
         return hits

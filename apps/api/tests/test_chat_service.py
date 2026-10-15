@@ -528,8 +528,17 @@ def test_broad_syllabus_question_prefers_complete_board_overview():
         status=KnowledgeStatus.PUBLISHED,
         tags=["board", "cbse", "icse"],
     )
+    comparison = KnowledgeEntry(
+        school_id="school-a",
+        title="Choosing between CBSE and ICSE",
+        content="The school helps families compare CBSE and ICSE.",
+        source_label="Approved comparison page",
+        status=KnowledgeStatus.PUBLISHED,
+        tags=["cbse", "icse", "board"],
+    )
     hits = [
-        SimpleNamespace(entry=icse, score=0.7065),
+        SimpleNamespace(entry=comparison, score=0.7177),
+        SimpleNamespace(entry=icse, score=0.6153),
         SimpleNamespace(entry=overview, score=0.5558),
     ]
 
