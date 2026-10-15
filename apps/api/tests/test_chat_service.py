@@ -25,7 +25,11 @@ from app.service import (
     extractive_fast_answer,
     has_strong_approved_hit,
     is_conversation_followup,
+    is_obviously_out_of_scope,
+    is_specific_transport_coverage_request,
     prioritize_complete_overview,
+    prioritize_campus_visit,
+    prioritize_geographic_location,
     social_response,
 )
 from app.retrieval_policy import correct_query_typos, expand_query, has_likely_typo
@@ -149,6 +153,93 @@ def test_transport_location_dependency_is_detected_without_model():
         "Does the school bus come to my area?", {"pickup_area": "JP Nagar"}
     ) == []
     assert deterministic_missing_details("Does the school provide transport?", {}) == []
+    assert deterministic_missing_details("Does the bus cover JP Nagar?", {}) == []
+    assert detail_is_already_supplied("Does the bus cover JP Nagar?", "pickup_area")
+    assert is_specific_transport_coverage_request("Does the bus cover JP Nagar?")
+
+
+def test_current_external_sports_result_is_obviously_out_of_scope():
+    assert is_obviously_out_of_scope("Who won yesterday's cricket match?")
+    assert not is_obviously_out_of_scope("Does the school offer cricket?")
+
+
+def test_geographic_state_question_prefers_location_entry():
+    unrelated = KnowledgeEntry(
+        school_id="school-a",
+        title="Pre-Primary admission interaction",
+        content="The school states that there is no entrance test for Pre-Primary.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    location = KnowledgeEntry(
+        school_id="school-a",
+        title="School contact details and location",
+        content="The school is in Rayasandra, Bengaluru, Karnataka 560099.",
+        source_label="Approved contact page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=unrelated, score=0.55),
+        SimpleNamespace(entry=location, score=0.52),
+    ]
+
+    ranked = prioritize_geographic_location(
+        "Which state is the school in?", hits, 0.38
+    )
+
+    assert ranked[0].entry.title == "School contact details and location"
+
+
+def test_state_board_question_is_not_treated_as_geographic_location():
+    board = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="The school offers CBSE and ICSE.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    location = KnowledgeEntry(
+        school_id="school-a",
+        title="School contact details and location",
+        content="The school is in Bengaluru, Karnataka.",
+        source_label="Approved contact page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=board, score=0.60),
+        SimpleNamespace(entry=location, score=0.55),
+    ]
+
+    ranked = prioritize_geographic_location(
+        "Is this a state board or CBSE school?", hits, 0.38
+    )
+
+    assert ranked[0].entry.title == "Boards offered"
+
+
+def test_campus_visit_prefers_visit_booking_source():
+    boards = KnowledgeEntry(
+        school_id="school-a",
+        title="Boards offered",
+        content="A board consultation is available during the campus visit.",
+        source_label="Approved admissions page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    visiting = KnowledgeEntry(
+        school_id="school-a",
+        title="Contact hours and visit booking",
+        content="Parents should book a campus visit in advance.",
+        source_label="Approved contact page",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    hits = [
+        SimpleNamespace(entry=boards, score=0.60),
+        SimpleNamespace(entry=visiting, score=0.55),
+    ]
+
+    ranked = prioritize_campus_visit("Can parents visit the campus?", hits, 0.38)
+
+    assert ranked[0].entry.title == "Contact hours and visit booking"
 
 
 @pytest.mark.asyncio
@@ -216,6 +307,30 @@ async def test_transport_location_clarification_skips_llm_understanding():
     assert model.understanding_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_supplied_transport_location_escalates_without_model_call():
+    model = CountingEvidenceModel()
+    unanswered = UnansweredRepository()
+    service = ChatService(
+        InMemoryKnowledgeRepository([]),
+        unanswered,
+        model,
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Does the bus cover JP Nagar?",
+        )
+    )
+
+    assert response.outcome == "escalated"
+    assert response.unanswered_id is not None
+    assert model.understanding_calls == 0
+    assert "JP Nagar" in unanswered.get(response.unanswered_id).question
+
+
 def test_approved_meal_match_uses_fast_path_at_half_score():
     entry = KnowledgeEntry(
         school_id="school-a",
@@ -240,6 +355,7 @@ def test_approved_meal_match_uses_fast_path_at_half_score():
         ("Hello, how are you?", "doing well"),
         ("Hi, hope you are doing well", "doing well"),
         ("Thank you", "welcome"),
+        ("Thank you for helping me.", "welcome"),
         ("Goodbye", "Goodbye"),
     ],
 )

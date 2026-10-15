@@ -92,7 +92,9 @@ def social_response(message: str) -> str | None:
         return SOCIAL_RESPONSES["wellbeing"]
     if re.fullmatch(
         r"(?:thanks|thank you|thankyou|thanks a lot|thank you so much|"
-        r"thanks for your help|that helps|got it|okay thanks|ok thanks)",
+        r"thanks for your help|thank you for your help|thank you for helping me|"
+        r"thanks for helping me|thank you for the information|that helps|got it|"
+        r"okay thanks|ok thanks)",
         cleaned,
     ):
         return SOCIAL_RESPONSES["thanks"]
@@ -275,6 +277,11 @@ def is_obviously_out_of_scope(question: str) -> bool:
         and not school_time_context
     ):
         return True
+    if re.search(r"\b(today|tonight|yesterday|tomorrow|latest|current)\b", lowered) and re.search(
+        r"\b(won|winner|score|match|game|news|weather|temperature)\b",
+        lowered,
+    ):
+        return True
     patterns = (
         "what is the time now",
         "what time is it",
@@ -326,7 +333,45 @@ def detail_is_already_supplied(question: str, detail: str) -> bool:
         return bool(re.search(r"(?:\+?\d[\d\s()-]{7,}\d)", question))
     if normalized_detail in {"academic_year", "admission_year", "year"}:
         return bool(re.search(r"\b20\d{2}(?:\s*[-/]\s*\d{2,4})?\b", question))
+    if normalized_detail in {
+        "pickup_area",
+        "pickup_location",
+        "location",
+        "address",
+    }:
+        match = re.search(
+            r"\b(?:cover|covers|serve|serves|from|at|in|near|around|to)\s+"
+            r"([a-z0-9][a-z0-9 .'-]{1,60}?)(?:[?.!,]|$)",
+            question,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return False
+        supplied = " ".join(match.group(1).lower().split())
+        return supplied not in {
+            "me", "my area", "my location", "my address", "our area",
+            "our location", "there", "here", "the area", "this area",
+        }
     return False
+
+
+def is_specific_transport_coverage_request(question: str) -> bool:
+    """Identify route/locality decisions that require school confirmation."""
+
+    lowered = " ".join(question.lower().split())
+    transport = re.search(
+        r"\b(?:bus|buses|transport|transportation|route|pickup|pick-up)\b",
+        lowered,
+    )
+    coverage = re.search(
+        r"\b(?:come|comes|cover|covers|serve|serves|available|pickup|pick-up)\b",
+        lowered,
+    )
+    personal_place = re.search(
+        r"\bmy\s+(?:area|location|address)\b|\bnear\s+me\b",
+        lowered,
+    ) or detail_is_already_supplied(question, "pickup_area")
+    return bool(transport and coverage and personal_place)
 
 
 def deterministic_missing_details(
@@ -348,7 +393,7 @@ def deterministic_missing_details(
             lowered,
         )
     )
-    supplied_location = any(
+    supplied_location = detail_is_already_supplied(question, "pickup_area") or any(
         context.get(key, "").strip()
         for key in ("pickup_area", "pickup_location", "location", "address")
     )
@@ -467,6 +512,77 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
     return hits
 
 
+def prioritize_geographic_location(question: str, hits, minimum_score: float):
+    """Prefer reviewed location evidence for state/city/address questions."""
+
+    if not hits:
+        return hits
+    lowered = question.lower()
+    terms = typo_tolerant_query_tokens(question)
+    # "State board" is an academic-board question, not a geographic one.
+    if terms & {"cbse", "icse", "board", "curriculum", "syllabus"}:
+        return hits
+    asks_for_geography = bool(
+        re.search(
+            r"\b(?:what|which)\s+(?:state|city|district|country)\b|"
+            r"\b(?:state|city|district|country)\s+(?:is|does)\b|"
+            r"\bwhere\s+(?:is|are)\b|\b(?:located|location|address)\b",
+            lowered,
+        )
+    )
+    if not asks_for_geography:
+        return hits
+
+    for index, hit in enumerate(hits):
+        title = hit.entry.title.lower()
+        if hit.score < minimum_score:
+            continue
+        if "location" not in title and "contact details" not in title:
+            continue
+        decision = evaluate_evidence(
+            question,
+            hit.entry.content,
+            hit.score,
+            minimum_score,
+        )
+        if decision.supported:
+            if index:
+                return [hit, *hits[:index], *hits[index + 1:]]
+            return hits
+    return hits
+
+
+def prioritize_campus_visit(question: str, hits, minimum_score: float):
+    """Prefer visit-booking/contact evidence over incidental campus mentions."""
+
+    if not hits:
+        return hits
+    lowered = question.lower()
+    if not re.search(r"\b(?:visit|visiting|tour|appointment|come to|see)\b", lowered):
+        return hits
+    for index, hit in enumerate(hits):
+        title = hit.entry.title.lower()
+        if hit.score < minimum_score:
+            continue
+        if not (
+            "visit" in title
+            or "contact hours" in title
+            or "contact details" in title
+        ):
+            continue
+        decision = evaluate_evidence(
+            question,
+            hit.entry.content,
+            hit.score,
+            minimum_score,
+        )
+        if decision.supported:
+            if index:
+                return [hit, *hits[:index], *hits[index + 1:]]
+            return hits
+    return hits
+
+
 def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | None:
     """Return approved source text only when the match is exceptionally direct.
 
@@ -510,7 +626,9 @@ def extractive_fast_answer(question: str, hits, minimum_score: float) -> str | N
         and synonym_match < 1.0
         and not deterministic_typo_match
     ):
-        return None
+        title_coverage = meaningful_keyword_score(question, top.entry.title)
+        if top.score < 0.42 or title_coverage < 0.50:
+            return None
     if not content or len(content) > 700:
         return None
     return content
@@ -717,6 +835,16 @@ class ChatService:
             hits,
             self.min_score,
         )
+        hits = prioritize_geographic_location(
+            contextual_question,
+            hits,
+            self.min_score,
+        )
+        hits = prioritize_campus_visit(
+            contextual_question,
+            hits,
+            self.min_score,
+        )
         predictable_missing_details = deterministic_missing_details(
             request.message,
             request.context,
@@ -730,6 +858,18 @@ class ChatService:
                 clarification_question=request.message,
                 clarification_kind="details",
                 required_details=predictable_missing_details,
+            )
+        if (
+            is_specific_transport_coverage_request(request.message)
+            and detail_is_already_supplied(request.message, "pickup_area")
+        ):
+            unanswered = self.unanswered.create(request.school_id, ticket_question)
+            return ChatResponse(
+                conversation_id=conversation_id,
+                answer=ESCALATION_MESSAGE,
+                outcome="escalated",
+                confidence=0.0,
+                unanswered_id=unanswered.id,
             )
         deterministic_typo_match = (
             has_likely_typo(contextual_question)
@@ -784,6 +924,16 @@ class ChatService:
         if retrieval_question != contextual_question or not hits:
             hits = self.knowledge.search(request.school_id, retrieval_question)
             hits = prioritize_complete_overview(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
+            hits = prioritize_geographic_location(
+                retrieval_question,
+                hits,
+                self.min_score,
+            )
+            hits = prioritize_campus_visit(
                 retrieval_question,
                 hits,
                 self.min_score,

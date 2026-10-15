@@ -9,6 +9,11 @@ DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "aquatic": ("swimming", "water sports", "pool"),
     "campus": ("location", "address"),
     "located": ("location", "address"),
+    "state": ("location", "address", "Karnataka", "Bengaluru"),
+    "city": ("location", "address", "Bengaluru", "Rayasandra"),
+    "visit": ("campus visit", "booking", "appointment", "contact hours"),
+    "tour": ("campus visit", "booking", "appointment"),
+    "participate": ("sports", "activities", "play"),
     "food": ("meal", "lunch", "Sodexo"),
     "lunch": ("meal", "food", "Sodexo"),
     "class": ("grade",),
@@ -35,7 +40,8 @@ DOMAIN_VOCABULARY = {
     "follow", "food", "grade", "icse", "library", "location", "meal", "montessori",
     "music", "option", "play", "playing", "school", "sports", "study", "syllabus", "swimming",
     "transport", "transportation", "bus", "buses", "route", "yoga",
-    "apply", "chairman", "facility", "facilities",
+    "apply", "chairman", "facility", "facilities", "state", "city",
+    "karnataka", "bengaluru", "rayasandra", "country",
 }
 
 COMMON_CHAT_NORMALIZATIONS = {
