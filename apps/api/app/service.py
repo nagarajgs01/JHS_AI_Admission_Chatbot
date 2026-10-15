@@ -165,6 +165,8 @@ def is_conversation_followup(question: str, history) -> bool:
     if re.search(
         r"\b(?:which one|which option|how much|what cost|who provides|"
         r"what time can (?:we|i)|when can (?:we|i)|how does that|"
+        r"how\s+(?:to\s+)?(?:book|schedule|arrange)|"
+        r"what time (?:is good|should (?:we|i)|can (?:we|i))|"
         r"what subjects?|tell me more|give me (?:more )?(?:details|information)|"
         r"what (?:abilities|skills|benefits)|"
         r"(?:explain|describe).*(?:simply|more)|"
@@ -211,10 +213,15 @@ def resolve_contextual_question(question: str, history) -> str:
         r"\b(?:what|which)\s+(?:is|are)\s+(?:the\s+)?(?:school|office|campus)\s+"
         r"(?:time|timing|timings|hours)\b|"
         r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\bwhat\s+time\s+(?:can|should)\s+(?:i|we)\s+"
+        r"(?:contact|call|phone|reach)\s+(?:the\s+)?school\b|"
         r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
         lowered,
     ):
         return "What are the published school office and campus opening hours?"
+
+    if re.search(r"\b(?:is|are)\b.*\b(?:united states|usa|u\.s\.a\.?|u\.s\.?)\b", lowered):
+        return "Is Jain Heritage School Electronic City in the United States or in Bengaluru, Karnataka?"
 
     if re.search(
         r"\b(?:contact|reach|call|phone|telephone|email|e-mail)\b",
@@ -278,6 +285,13 @@ def resolve_contextual_question(question: str, history) -> str:
         prior,
     ):
         return "On which days is the school office open, and what are its office hours?"
+
+    if re.search(r"\bwhat\s+time\s+(?:is\s+)?(?:good|best|suitable)\b", lowered) and re.search(
+        r"\b(?:contact|call|phone|reach)\b.*\bschool\b|"
+        r"\bschool\b.*\b(?:contact|call|phone|reach)\b",
+        prior,
+    ):
+        return "What are the published school office and campus opening hours?"
 
     if re.search(r"\b(?:why|purpose|reason).*(?:interaction)|conduct.*interaction\b", lowered) and re.search(
         r"\b(?:pre-primary|nursery|entrance|admission interaction)\b", prior
@@ -1054,6 +1068,13 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
         return hits
     lowered = question.lower()
     requirements: list[tuple[re.Pattern, re.Pattern]] = []
+    if re.search(r"\b(?:united states|usa|u\.s\.a\.?|u\.s\.?)\b", lowered):
+        requirements.append(
+            (
+                re.compile(r"location|contact details", re.I),
+                re.compile(r"bengaluru|karnataka|rayasandra", re.I),
+            )
+        )
     if re.search(
         r"\b(?:contact|reach|call|phone|telephone|email|e-mail)\b|"
         r"\b(?:talk|speak)\s+to\s+(?:(?:the\s+)?a\s+)?(?:person|someone|staff|team)\b|"
@@ -1076,6 +1097,8 @@ def prioritize_requested_fact(question: str, hits, minimum_score: float):
         )
     if re.search(
         r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\bwhat\s+time\s+(?:can|should)\s+(?:i|we)\s+"
+        r"(?:contact|call|phone|reach)\s+(?:the\s+)?school\b|"
         r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
         lowered,
     ):
@@ -1208,6 +1231,28 @@ def concise_source_answer(
     response_lower = response_question.lower()
     evidence_lower = evidence_question.lower()
 
+    if re.search(r"\b(?:united states|usa|u\.s\.a\.?|u\.s\.?)\b", response_lower) and re.search(
+        r"\b(?:bengaluru|karnataka|rayasandra)\b",
+        content,
+        re.I,
+    ):
+        location = next(
+            (
+                _clean_source_attribution(sentence)
+                for sentence in sentences
+                if re.search(r"\b(?:located|address)\b", sentence, re.I)
+                and re.search(r"\b(?:bengaluru|karnataka|rayasandra)\b", sentence, re.I)
+            ),
+            None,
+        )
+        if location:
+            return f"No. {location}"
+
+    asks_contact_time = bool(re.search(
+        r"\bwhat\s+time\s+(?:can|should)\s+(?:i|we)\s+"
+        r"(?:contact|call|phone|reach)\s+(?:the\s+)?school\b",
+        response_lower,
+    ))
     asks_phone = bool(re.search(r"\b(?:phone|telephone|mobile|call)\b", response_lower))
     asks_email = bool(re.search(r"\b(?:email|e-mail)\b", response_lower))
     asks_contact = bool(
@@ -1219,7 +1264,7 @@ def concise_source_answer(
             response_lower,
         )
     )
-    if asks_phone or asks_email or asks_contact:
+    if (asks_phone or asks_email or asks_contact) and not asks_contact_time:
         contact_sentences = [
             _clean_source_attribution(sentence)
             for sentence in sentences
@@ -1249,6 +1294,8 @@ def concise_source_answer(
 
     if re.search(
         r"\bwhat\s+time\s+does\s+(?:the\s+)?(?:school|office|campus)\s+open\b|"
+        r"\bwhat\s+time\s+(?:can|should)\s+(?:i|we)\s+"
+        r"(?:contact|call|phone|reach)\s+(?:the\s+)?school\b|"
         r"\b(?:school|office|campus)\s+(?:opening\s+)?(?:time|timing|timings|hours)\b",
         f"{response_lower} {evidence_lower}",
     ):

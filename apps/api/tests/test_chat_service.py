@@ -1771,3 +1771,55 @@ def test_opening_hours_entry_outranks_open_admissions_session():
     )
 
     assert ranked[0].entry.title == "Contact hours and visit booking"
+
+
+def test_short_booking_and_contact_time_followups_keep_recent_intent():
+    visit_history = [
+        ChatHistoryMessage(role="user", content="I want to visit the school."),
+        ChatHistoryMessage(role="assistant", content="Campus visits should be booked in advance."),
+    ]
+    contact_history = [
+        ChatHistoryMessage(role="user", content="What time can I contact the school?"),
+        ChatHistoryMessage(role="assistant", content="Office hours are Monday to Saturday."),
+    ]
+
+    assert is_conversation_followup("How book?", visit_history)
+    assert resolve_contextual_question("How book?", visit_history).startswith(
+        "How can I arrange a campus visit"
+    )
+    assert resolve_contextual_question("What time is good?", contact_history) == (
+        "What are the published school office and campus opening hours?"
+    )
+    assert resolve_contextual_question("What time should I call school?", []) == (
+        "What are the published school office and campus opening hours?"
+    )
+
+
+def test_country_confirmation_answers_no_from_approved_location():
+    content = (
+        "Jain Heritage School Electronic City is located at Rayasandra Main Road, "
+        "Bengaluru, Karnataka 560099."
+    )
+    question = "Is it in the United States?"
+
+    assert resolve_contextual_question(question, []) == (
+        "Is Jain Heritage School Electronic City in the United States or in "
+        "Bengaluru, Karnataka?"
+    )
+    assert concise_source_answer(question, question, content) == (
+        "No. Jain Heritage School Electronic City is located at Rayasandra Main "
+        "Road, Bengaluru, Karnataka 560099."
+    )
+
+
+def test_contact_time_answer_returns_hours_instead_of_contact_details():
+    content = (
+        "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM. "
+        "Visitors may call +91 96630 21118."
+    )
+
+    assert concise_source_answer(
+        "What time should I call school?",
+        "What are the published school office and campus opening hours?",
+        content,
+    ) == "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM."
