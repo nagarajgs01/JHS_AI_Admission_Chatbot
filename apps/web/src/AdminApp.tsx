@@ -288,7 +288,7 @@ export function AdminApp() {
           <button type="button" className="secondary-button" onClick={() => void loadQueue()} disabled={loading}>Refresh</button>
         </div>
         <div className="status-tabs" role="tablist">
-          {(["open", "answered", "closed"] as QueueStatus[]).map((value) => (
+          {(["open", "answered"] as QueueStatus[]).map((value) => (
             <button type="button" className={status === value ? "active" : ""} onClick={() => setStatus(value)} key={value}>{value}</button>
           ))}
         </div>
