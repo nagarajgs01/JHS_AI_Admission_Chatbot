@@ -238,6 +238,7 @@ def evaluate_evidence(
     passage: str,
     score: float,
     minimum_score: float = 0.38,
+    source_label: str | None = None,
 ) -> EvidenceDecision:
     question_terms = normalized_phrases(question)
     passage_terms = normalized_phrases(passage)
@@ -262,7 +263,21 @@ def evaluate_evidence(
     ):
         return EvidenceDecision(False, "office hours do not establish student school timings")
 
-    if "who" in lowered_question and {"teacher", "faculty"} & question_terms:
+    school_authority_approved = (
+        (source_label or "").strip().lower()
+        == "school-authority approved response"
+    )
+    named_staff_question = bool(
+        re.search(r"\b(?:who|name|named)\b", lowered_question)
+        and (
+            {"teacher", "faculty"} & question_terms
+            or re.search(
+                r"\b(?:teach|teaches|teaching|taught|instructor|instructors)\b",
+                lowered_question,
+            )
+        )
+    )
+    if named_staff_question and not school_authority_approved:
         return EvidenceDecision(False, "no approved named staff evidence is available")
 
     if "after" in question_terms and {"visit", "consult"} & question_terms:

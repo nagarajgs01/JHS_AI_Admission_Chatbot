@@ -35,6 +35,9 @@ from app.service import (
     needs_contextual_understanding,
     is_obviously_out_of_scope,
     is_specific_transport_coverage_request,
+    mentioned_grades,
+    most_recent_user_grades,
+    grades_from_context,
     prioritize_complete_overview,
     prioritize_campus_visit,
     prioritize_board_guidance,
@@ -47,7 +50,12 @@ from app.service import (
     supplied_pickup_area,
     transport_location_continuation,
 )
-from app.retrieval_policy import correct_query_typos, expand_query, has_likely_typo
+from app.retrieval_policy import (
+    correct_query_typos,
+    evaluate_evidence,
+    expand_query,
+    has_likely_typo,
+)
 
 
 class HallucinatingModel:
@@ -1823,3 +1831,304 @@ def test_contact_time_answer_returns_hours_instead_of_contact_details():
         "What are the published school office and campus opening hours?",
         content,
     ) == "Office hours are Monday to Saturday, 9:00 AM to 5:00 PM."
+
+
+def test_honorific_period_does_not_truncate_approved_staff_name():
+    content = "The current Grade 6 class teacher is Mr. ABC."
+
+    answer = concise_source_answer(
+        "Who is the teacher for 6th grade?",
+        "Who is the teacher for 6th grade?",
+        content,
+    )
+
+    assert answer == "The current Grade 6 class teacher is Mr. ABC."
+
+
+def test_named_staff_evidence_requires_school_authority_source():
+    question = "Who is the teacher for 6th grade?"
+    passage = "The current Grade 6 class teacher is Mr ABC."
+
+    ordinary = evaluate_evidence(
+        question,
+        passage,
+        0.69,
+        source_label="JHS official website",
+    )
+    authority = evaluate_evidence(
+        question,
+        passage,
+        0.69,
+        source_label="School-authority approved response",
+    )
+
+    assert not ordinary.supported
+    assert authority.supported
+
+
+@pytest.mark.asyncio
+async def test_active_school_authority_staff_answer_is_reused():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the current teacher for 6th grade?",
+        )
+    )
+
+    assert response.outcome == "answered"
+    assert "Mr ABC" in response.answer
+    assert response.citations[0].source_label == "School-authority approved response"
+
+
+@pytest.mark.asyncio
+async def test_non_authority_staff_evidence_is_not_reused():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Grade 6 teacher",
+        content="The current Grade 6 class teacher is Mr ABC.",
+        source_label="General website text",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="Who is the Grade 6 teacher?")
+    )
+
+    assert response.outcome == "escalated"
+
+
+@pytest.mark.asyncio
+async def test_expired_school_authority_staff_answer_is_not_reused():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Grade 6 teacher",
+        content="The current Grade 6 class teacher is Mr ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="Who is the Grade 6 teacher?")
+    )
+
+    assert response.outcome == "escalated"
+
+
+def test_grade_mentions_support_both_common_word_orders():
+    assert mentioned_grades("Who is the 6th grade teacher?") == {"6"}
+    assert mentioned_grades("Who teaches Grade 7?") == {"7"}
+    assert mentioned_grades("Who is the class 8 teacher?") == {"8"}
+
+
+@pytest.mark.asyncio
+async def test_staff_followup_cannot_reuse_another_grades_answer():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="Who is the teacher for 6th grade?"),
+        ChatHistoryMessage(
+            role="assistant",
+            content="The current Grade 6 class teacher is Mr ABC.",
+        ),
+    ]
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="What about 7th grade?",
+            history=history,
+        )
+    )
+
+    assert response.outcome == "escalated"
+    assert "Mr ABC" not in response.answer
+
+
+@pytest.mark.asyncio
+async def test_unspecified_staff_grade_requests_clarification():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+
+    response = await service.respond(
+        ChatRequest(school_id="school-a", message="Who is the teacher?")
+    )
+
+    assert response.outcome == "clarification"
+    assert response.required_details == ["grade"]
+    assert "which grade" in response.answer.lower()
+    assert "Mr ABC" not in response.answer
+
+
+@pytest.mark.asyncio
+async def test_teaches_wording_cannot_cross_grade_boundaries():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr. ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+
+    matching = await service.respond(
+        ChatRequest(school_id="school-a", message="Who teaches 6th grade?")
+    )
+    mismatched = await service.respond(
+        ChatRequest(school_id="school-a", message="Who teaches 5th grade?")
+    )
+
+    assert matching.outcome == "answered"
+    assert "Mr. ABC" in matching.answer
+    assert mismatched.outcome == "escalated"
+    assert "Mr. ABC" not in mismatched.answer
+
+
+def test_most_recent_user_grade_wins_over_older_conversation_grade():
+    history = [
+        ChatHistoryMessage(role="user", content="Who teaches 6th grade?"),
+        ChatHistoryMessage(role="assistant", content="Mr. ABC teaches Grade 6."),
+        ChatHistoryMessage(role="user", content="What about 7th grade?"),
+        ChatHistoryMessage(role="assistant", content=ESCALATION_MESSAGE),
+    ]
+
+    assert most_recent_user_grades(history) == {"7"}
+
+
+@pytest.mark.asyncio
+async def test_generic_staff_followup_uses_most_recent_grade_not_older_grade():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr. ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="Who teaches 6th grade?"),
+        ChatHistoryMessage(role="assistant", content="Mr. ABC teaches Grade 6."),
+        ChatHistoryMessage(role="user", content="What about 7th grade?"),
+        ChatHistoryMessage(role="assistant", content=ESCALATION_MESSAGE),
+    ]
+
+    response = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the teacher?",
+            history=history,
+        )
+    )
+
+    assert response.outcome == "escalated"
+    assert "Mr. ABC" not in response.answer
+
+
+def test_grade_clarification_context_accepts_numbers_and_ordinals():
+    assert grades_from_context({"grade": "6"}) == {"6"}
+    assert grades_from_context({"grade": "6th"}) == {"6"}
+    assert grades_from_context({"grade_or_class": "Grade 7"}) == {"7"}
+
+
+@pytest.mark.asyncio
+async def test_staff_grade_clarification_form_resolves_without_looping():
+    entry = KnowledgeEntry(
+        school_id="school-a",
+        title="Who is the 6th grade teacher",
+        content="The current Grade 6 class teacher is Mr. ABC.",
+        source_label="School-authority approved response",
+        status=KnowledgeStatus.PUBLISHED,
+    )
+    service = ChatService(
+        InMemoryKnowledgeRepository([entry]),
+        UnansweredRepository(),
+        HallucinatingModel(),
+        min_score=0.38,
+    )
+    history = [
+        ChatHistoryMessage(role="user", content="Who is the teacher?"),
+        ChatHistoryMessage(
+            role="assistant",
+            content="Which grade or class are you asking about?",
+        ),
+    ]
+
+    grade_six = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the teacher?",
+            history=history,
+            context={"grade": "6"},
+        )
+    )
+    grade_five = await service.respond(
+        ChatRequest(
+            school_id="school-a",
+            message="Who is the teacher?",
+            history=history,
+            context={"grade": "5th"},
+        )
+    )
+
+    assert grade_six.outcome == "answered"
+    assert "Mr. ABC" in grade_six.answer
+    assert grade_five.outcome == "escalated"
+    assert "Mr. ABC" not in grade_five.answer

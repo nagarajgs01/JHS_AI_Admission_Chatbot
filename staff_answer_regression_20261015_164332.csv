@@ -1,0 +1,6 @@
+number,test,question,status,outcome,seconds,source,answer,problems
+1,Approved Grade 6 teacher,Who is the teacher for 6th grade?,PASS,answered,0.285,School-authority approved response,TEST - The current 6th class teacher  is Mr.,
+2,Grade 7 contextual follow-up,What about 7th grade?,REVIEW,answered,0.238,School-authority approved response,TEST - The current 6th class teacher  is Mr.,"outcome=answered, expected=escalated; unexpected: 6th class teacher"
+3,Current Grade 6 teacher,Who is the current Grade 6 class teacher?,PASS,answered,0.153,School-authority approved response,TEST - The current 6th class teacher  is Mr.,
+4,Unknown Grade 5 teacher,Who is the Grade 5 teacher?,REVIEW,answered,0.073,School-authority approved response,TEST - The current 6th class teacher  is Mr.,"outcome=answered, expected=escalated; unexpected: 6th class teacher"
+5,Teacher without grade,Who is the teacher?,REVIEW,answered,0.443,School-authority approved response,TEST - The current 6th class teacher  is Mr.,"outcome=answered, expected=escalated; unexpected: 6th class teacher"

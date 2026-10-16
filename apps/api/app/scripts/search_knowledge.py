@@ -31,6 +31,7 @@ def main() -> None:
             arguments.query,
             f"{result['title']} {result['content']} {' '.join(result['tags'])}",
             float(result["combined_score"]),
+            source_label=result["source_label"],
         )
         if result_decision.supported:
             accepted.append((result, result_decision))
@@ -40,6 +41,7 @@ def main() -> None:
         arguments.query,
         f"{top['title']} {top['content']} {' '.join(top['tags'])}",
         float(top["combined_score"]),
+        source_label=top["source_label"],
     )
     print(f"Expanded query: {expanded_query}")
     print(f"Evidence decision: {'ANSWER' if decision.supported else 'ESCALATE'}")

@@ -476,6 +476,86 @@ def is_clear_missing_information(question: str) -> bool:
     return False
 
 
+def is_named_staff_question(question: str) -> bool:
+    """Return whether the request asks for the identity of teaching staff."""
+
+    lowered = " ".join(question.lower().split())
+    terms = typo_tolerant_query_tokens(question)
+    return bool(
+        re.search(r"\b(?:who|name|named)\b", lowered)
+        and (
+            {"teacher", "faculty"} & terms
+            or re.search(
+                r"\b(?:teach|teaches|teaching|taught|instructor|instructors)\b",
+                lowered,
+            )
+        )
+    )
+
+
+def is_school_authority_response(hit) -> bool:
+    return (
+        hit.entry.source_label.strip().lower()
+        == "school-authority approved response"
+    )
+
+
+def mentioned_grades(value: str) -> set[str]:
+    """Return normalized grade numbers explicitly stated in text."""
+
+    lowered = " ".join(value.lower().split())
+    grades = set(
+        re.findall(
+            r"\b(?:grade|class)\s*(\d{1,2})(?:st|nd|rd|th)?\b",
+            lowered,
+        )
+    )
+    grades.update(
+        re.findall(
+            r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:grade|class)\b",
+            lowered,
+        )
+    )
+    return grades
+
+
+def staff_hit_matches_requested_grade(question: str, hit) -> bool:
+    """Prevent an approved staff assignment from leaking across grades."""
+
+    requested = mentioned_grades(question)
+    if not requested:
+        # A generic "Who is the teacher?" request does not identify which
+        # grade-specific assignment the parent means. Never pick one merely
+        # because it is the closest available approved record.
+        return False
+    evidence = mentioned_grades(f"{hit.entry.title} {hit.entry.content}")
+    return bool(evidence and requested & evidence)
+
+
+def most_recent_user_grades(history) -> set[str]:
+    """Return grades from the newest user turn that explicitly mentions one."""
+
+    for item in reversed(history or []):
+        if not str(item.role).lower().endswith("user"):
+            continue
+        grades = mentioned_grades(item.content)
+        if grades:
+            return grades
+    return set()
+
+
+def grades_from_context(context: dict[str, str]) -> set[str]:
+    """Normalize grade values submitted through the clarification form."""
+
+    grades: set[str] = set()
+    for key in ("grade", "class", "grade_or_class"):
+        value = (context.get(key) or "").strip()
+        if not value:
+            continue
+        grades.update(mentioned_grades(f"Grade {value}"))
+    return grades
+
+
 def is_dynamic_operational_question(question: str) -> bool:
     """Identify live operational facts that static approved knowledge cannot prove."""
 
@@ -825,6 +905,7 @@ def has_strong_approved_hit(question: str, hits, minimum_score: float) -> bool:
         top.entry.content,
         top.score,
         minimum_score,
+        top.entry.source_label,
     )
     if not decision.supported:
         return False
@@ -870,6 +951,7 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
                 hit.entry.content,
                 hit.score,
                 minimum_score,
+                hit.entry.source_label,
             )
             content_alignment = expanded_keyword_score(
                 question,
@@ -914,6 +996,7 @@ def prioritize_complete_overview(question: str, hits, minimum_score: float):
             hit.entry.content,
             hit.score,
             minimum_score,
+            hit.entry.source_label,
         )
         if decision.supported and index:
             return [hit, *hits[:index], *hits[index + 1:]]
@@ -946,6 +1029,7 @@ def prioritize_board_guidance(question: str, hits, minimum_score: float):
             hit.entry.content,
             hit.score,
             minimum_score,
+            hit.entry.source_label,
         )
         if decision.supported:
             if index:
@@ -986,6 +1070,7 @@ def prioritize_geographic_location(question: str, hits, minimum_score: float):
             hit.entry.content,
             hit.score,
             minimum_score,
+            hit.entry.source_label,
         )
         if decision.supported:
             if index:
@@ -1027,6 +1112,7 @@ def prioritize_campus_visit(question: str, hits, minimum_score: float):
             hit.entry.content,
             hit.score,
             minimum_score,
+            hit.entry.source_label,
         )
         if decision.supported:
             if index:
@@ -1213,6 +1299,23 @@ def _clean_source_attribution(sentence: str) -> str:
     return cleaned
 
 
+def _split_source_sentences(content: str) -> list[str]:
+    """Split prose without breaking names after common honorifics."""
+
+    marker = "<HONORIFIC_PERIOD>"
+    protected = re.sub(
+        r"\b(Mr|Mrs|Ms|Miss|Dr|Prof)\.",
+        lambda match: f"{match.group(1)}{marker}",
+        content.strip(),
+        flags=re.IGNORECASE,
+    )
+    return [
+        sentence.replace(marker, ".").strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", protected)
+        if sentence.strip()
+    ]
+
+
 def concise_source_answer(
     response_question: str,
     evidence_question: str,
@@ -1220,11 +1323,7 @@ def concise_source_answer(
 ) -> str:
     """Present approved evidence as a direct, short conversational answer."""
 
-    sentences = [
-        sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+", content.strip())
-        if sentence.strip()
-    ]
+    sentences = _split_source_sentences(content)
     if not sentences:
         return content.strip()
 
@@ -1765,6 +1864,7 @@ def extractive_fast_answer(
         content,
         top.score,
         minimum_score,
+        top.entry.source_label,
     )
     if not decision.supported:
         return None
@@ -2145,7 +2245,10 @@ class ChatService:
                 unanswered_id=unanswered.id,
             )
 
-        if is_dynamic_operational_question(scope_question):
+        if (
+            is_dynamic_operational_question(scope_question)
+            and not is_named_staff_question(scope_question)
+        ):
             unanswered = self.unanswered.create(request.school_id, ticket_question)
             return ChatResponse(
                 conversation_id=conversation_id,
@@ -2162,6 +2265,49 @@ class ChatService:
             request.history,
         )
         hits = self.knowledge.search(request.school_id, retrieval_context)
+
+        # Staff assignments change and must never be inferred from general
+        # website or brochure text. A currently active response explicitly
+        # published by the school authority is the only permitted exception.
+        if is_named_staff_question(retrieval_context):
+            requested_grades = grades_from_context(request.context)
+            if not requested_grades:
+                requested_grades = mentioned_grades(request.message)
+            if not requested_grades:
+                requested_grades = most_recent_user_grades(request.history)
+            if not requested_grades:
+                return ChatResponse(
+                    conversation_id=conversation_id,
+                    answer=(
+                        "Which grade or class are you asking about? Please provide "
+                        "the grade so I can check the correct teacher information."
+                    ),
+                    outcome="clarification",
+                    confidence=0.0,
+                    clarification_question=request.message,
+                    clarification_kind="details",
+                    required_details=["grade"],
+                )
+            grade_question = " ".join(
+                f"Grade {grade}" for grade in sorted(requested_grades)
+            )
+            authority_hits = [
+                hit
+                for hit in hits
+                if is_school_authority_response(hit)
+                and (hit.score >= self.min_score or hit.evidence_supported)
+                and staff_hit_matches_requested_grade(grade_question, hit)
+            ]
+            if not authority_hits:
+                unanswered = self.unanswered.create(request.school_id, ticket_question)
+                return ChatResponse(
+                    conversation_id=conversation_id,
+                    answer=ESCALATION_MESSAGE,
+                    outcome="escalated",
+                    confidence=hits[0].score if hits else 0.0,
+                    unanswered_id=unanswered.id,
+                )
+            hits = authority_hits
         hits = prioritize_complete_overview(
             retrieval_context,
             hits,

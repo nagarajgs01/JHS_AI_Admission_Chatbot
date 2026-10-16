@@ -45,6 +45,7 @@ class PostgresKnowledgeRepository:
                 passage,
                 float(row["combined_score"]),
                 self.minimum_score,
+                row["source_label"],
             )
             if decision.supported:
                 supported_rows.append(row)
