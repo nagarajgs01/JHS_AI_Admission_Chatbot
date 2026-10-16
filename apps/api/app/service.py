@@ -2264,18 +2264,14 @@ class ChatService:
             contextual_question,
             request.history,
         )
-        hits = self.knowledge.search(request.school_id, retrieval_context)
-
-        # Staff assignments change and must never be inferred from general
-        # website or brochure text. A currently active response explicitly
-        # published by the school authority is the only permitted exception.
+        requested_staff_grades: set[str] = set()
         if is_named_staff_question(retrieval_context):
-            requested_grades = grades_from_context(request.context)
-            if not requested_grades:
-                requested_grades = mentioned_grades(request.message)
-            if not requested_grades:
-                requested_grades = most_recent_user_grades(request.history)
-            if not requested_grades:
+            requested_staff_grades = grades_from_context(request.context)
+            if not requested_staff_grades:
+                requested_staff_grades = mentioned_grades(request.message)
+            if not requested_staff_grades:
+                requested_staff_grades = most_recent_user_grades(request.history)
+            if not requested_staff_grades:
                 return ChatResponse(
                     conversation_id=conversation_id,
                     answer=(
@@ -2288,8 +2284,20 @@ class ChatService:
                     clarification_kind="details",
                     required_details=["grade"],
                 )
+            # Canonicalize the staff query so stale grade mentions from older
+            # turns cannot influence retrieval or central evidence validation.
+            grade_text = " and ".join(
+                f"Grade {grade}" for grade in sorted(requested_staff_grades)
+            )
+            retrieval_context = f"Who is the teacher for {grade_text}?"
+        hits = self.knowledge.search(request.school_id, retrieval_context)
+
+        # Staff assignments change and must never be inferred from general
+        # website or brochure text. A currently active response explicitly
+        # published by the school authority is the only permitted exception.
+        if is_named_staff_question(retrieval_context):
             grade_question = " ".join(
-                f"Grade {grade}" for grade in sorted(requested_grades)
+                f"Grade {grade}" for grade in sorted(requested_staff_grades)
             )
             authority_hits = [
                 hit

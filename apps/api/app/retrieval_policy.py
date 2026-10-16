@@ -279,6 +279,34 @@ def evaluate_evidence(
     )
     if named_staff_question and not school_authority_approved:
         return EvidenceDecision(False, "no approved named staff evidence is available")
+    if named_staff_question and school_authority_approved:
+        requested_grades = set(
+            re.findall(
+                r"\b(?:grade|class)\s*(\d{1,2})(?:st|nd|rd|th)?\b|"
+                r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:grade|class)\b",
+                lowered_question,
+            )
+        )
+        evidence_grades = set(
+            re.findall(
+                r"\b(?:grade|class)\s*(\d{1,2})(?:st|nd|rd|th)?\b|"
+                r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:grade|class)\b",
+                lowered_passage,
+            )
+        )
+        requested_grades = {
+            grade for pair in requested_grades for grade in pair if grade
+        }
+        evidence_grades = {
+            grade for pair in evidence_grades for grade in pair if grade
+        }
+        if not requested_grades:
+            return EvidenceDecision(False, "the staff question does not specify a grade")
+        if not evidence_grades or not requested_grades & evidence_grades:
+            return EvidenceDecision(
+                False,
+                "approved staff evidence is for a different grade",
+            )
 
     if "after" in question_terms and {"visit", "consult"} & question_terms:
         if not {"apply", "application", "document", "interaction", "enrolment"} & passage_terms:

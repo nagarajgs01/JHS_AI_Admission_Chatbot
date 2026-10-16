@@ -1866,6 +1866,35 @@ def test_named_staff_evidence_requires_school_authority_source():
     assert authority.supported
 
 
+def test_school_authority_staff_evidence_must_match_requested_grade():
+    passage = "The current Grade 6 class teacher is Mr. ABC."
+
+    matching = evaluate_evidence(
+        "Who teaches 6th grade?",
+        passage,
+        0.69,
+        source_label="School-authority approved response",
+    )
+    mismatched = evaluate_evidence(
+        "Who teaches 5th grade?",
+        passage,
+        0.69,
+        source_label="School-authority approved response",
+    )
+    unspecified = evaluate_evidence(
+        "Who is the teacher?",
+        passage,
+        0.69,
+        source_label="School-authority approved response",
+    )
+
+    assert matching.supported
+    assert not mismatched.supported
+    assert "different grade" in mismatched.reason
+    assert not unspecified.supported
+    assert "does not specify a grade" in unspecified.reason
+
+
 @pytest.mark.asyncio
 async def test_active_school_authority_staff_answer_is_reused():
     entry = KnowledgeEntry(
